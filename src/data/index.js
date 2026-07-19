@@ -28,6 +28,7 @@ import { lab06 } from './lab06';
 import { lab07 } from './lab07';
 import { lab08 } from './lab08';
 import { lab09 } from './lab09';
+import { lab10 } from './lab10';
 
 export const lectures = [
   lecture01,
@@ -61,5 +62,6 @@ export const labs = [
   lab06,
   lab07,
   lab08,
-  lab09
+  lab09,
+  lab10
 ];
