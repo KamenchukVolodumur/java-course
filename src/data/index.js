@@ -18,6 +18,7 @@ import { lecture17 } from './lecture17';
 import { lecture18 } from './lecture18';
 import { lecture19 } from './lecture19';
 import { lecture20 } from './lecture20';
+import { lecture21 } from './lecture21';
 
 import { lab01 } from './lab01';
 import { lab02 } from './lab02';
@@ -29,6 +30,7 @@ import { lab07 } from './lab07';
 import { lab08 } from './lab08';
 import { lab09 } from './lab09';
 import { lab10 } from './lab10';
+import { lab11 } from './lab11';
 
 export const lectures = [
   lecture01,
@@ -50,7 +52,8 @@ export const lectures = [
   lecture17,
   lecture18,
   lecture19,
-  lecture20
+  lecture20,
+  lecture21
 ];
 
 export const labs = [
@@ -63,5 +66,6 @@ export const labs = [
   lab07,
   lab08,
   lab09,
-  lab10
+  lab10,
+  lab11
 ];

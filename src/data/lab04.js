@@ -35,13 +35,21 @@ public class Contact implements Comparable<Contact> {
     private final String email;
     private final ContactGroup group;
 
-    // Конструктор, гетери, toString()
+    // TODO: Конструктор з усіма полями, гетери
+
+    // TODO: Перевизначте toString(), щоб System.out.println(contact) 
+    //       виводив щось типу: "Олег Петренко | ☎ +380501234567 | ✉ oleg@work.com | [Робота]"
+    //       Підказка: використайте String.format()
+
+    // TODO: Реалізуйте compareTo() — сортування за прізвищем, 
+    //       а при однакових прізвищах — за ім'ям.
 }
 \`\`\`
 
 Зверніть увагу:
 * Всі поля \`final\` — об'єкт **іммутабельний** (після створення не може бути змінений).
-* Клас реалізує інтерфейс \`Comparable<Contact>\` — метод \`compareTo\` повинен сортувати контакти **за прізвищем**, а при однакових прізвищах — **за ім'ям**.
+* Без \`toString()\` Java виведе щось типу \`Contact@4e50df2e\` (адресу в пам'яті), що марно. Перевизначивши його, ви зможете просто писати \`System.out.println(contact)\`.
+* \`compareTo\` потрібен для сортування через \`Collections.sort()\` та \`stream().sorted()\`.
 
 ### 1.2. Enum \`ContactGroup\`
 Створіть enum \`ContactGroup\` у тому ж пакеті:
@@ -218,12 +226,12 @@ public class Main {
 
             String choice = scanner.nextLine().trim();
             switch (choice) {
-                case "1" -> showAll(service);
-                case "2" -> addContact(service, scanner);
-                case "3" -> search(service, scanner);
-                case "4" -> sortMenu(service, scanner);
-                case "5" -> groupByCategory(service);
-                case "6" -> showStats(service);
+                case "1" -> handleShowAll(service);
+                case "2" -> handleAddContact(service, scanner);
+                case "3" -> handleSearch(service, scanner);
+                case "4" -> handleSortMenu(service, scanner);
+                case "5" -> handleGroupByCategory(service);
+                case "6" -> handleShowStats(service);
                 case "0" -> {
                     System.out.println("До побачення!");
                     return;
@@ -232,8 +240,48 @@ public class Main {
             }
         }
     }
+
+    // ↓↓↓ Це допоміжні UI-методи (обробники меню). ↓↓↓
+    // Вони НЕ містять бізнес-логіки!
+    // Їх єдина роль: зчитати дані з консолі → викликати метод service → вивести результат.
+
+    private static void handleShowAll(ContactService service) {
+        // TODO: Викличте service.getAllSorted() і виведіть кожен контакт через forEach
+    }
+
+    private static void handleAddContact(ContactService service, Scanner scanner) {
+        // TODO: Запитайте у користувача ім'я, прізвище, телефон, email, групу
+        //       Створіть об'єкт: new Contact(firstName, lastName, phone, email, group)
+        //       Викличте: service.addContact(contact)
+        //       Оберніть у try-catch (DuplicateContactException)
+    }
+
+    private static void handleSearch(ContactService service, Scanner scanner) {
+        // TODO: Запитайте ім'я → викличте service.searchByName(query)
+    }
+
+    private static void handleSortMenu(ContactService service, Scanner scanner) {
+        // TODO: Покажіть підменю сортування (за прізвищем, email, групою)
+    }
+
+    private static void handleGroupByCategory(ContactService service) {
+        // TODO: Викличте service.groupByCategory() і виведіть результат
+    }
+
+    private static void handleShowStats(ContactService service) {
+        // TODO: Виведіть статистику (кількість, групи, найдовше прізвище)
+    }
+
+    private static void seedData(ContactService service) {
+        // Реалізація нижче
+    }
 }
 \`\`\`
+
+> [!IMPORTANT]
+> Зверніть увагу на розділення відповідальностей:
+> * **\`ContactService\`** містить бізнес-логіку: \`addContact()\`, \`searchByName()\`, \`getAllSorted()\` — працює з даними.
+> * **\`Main\`** містить лише UI-обробники: \`handleAddContact()\` зчитує текст з консолі (\`Scanner\`) і передає його в \`service.addContact()\`. Назви починаються з \`handle\`, щоб було видно, що це обробники подій меню, а не бізнес-методи.
 
 ### Реалізація пунктів меню:
 
