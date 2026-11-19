@@ -92,6 +92,7 @@ function App() {
   const [quizAnswers, setQuizAnswers] = useState({})
   const [quizSubmitted, setQuizSubmitted] = useState({})
   const [copiedIndex, setCopiedIndex] = useState(null)
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
 
   useEffect(() => {
     localStorage.setItem("java_guide_completed", JSON.stringify(completedLectures))
@@ -139,6 +140,7 @@ function App() {
 
   const handleSelectLecture = (id) => {
     setSelectedLectureId(id)
+    setIsMobileMenuOpen(false) // Close mobile menu when a lecture is selected
     // Smooth scroll to main content top
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
@@ -378,8 +380,11 @@ function App() {
 
   return (
     <div className="app-container">
+      {/* Mobile Menu Overlay */}
+      {isMobileMenuOpen && <div className="mobile-menu-overlay" onClick={() => setIsMobileMenuOpen(false)}></div>}
+
       {/* Sidebar Layout */}
-      <aside className="sidebar">
+      <aside className={`sidebar ${isMobileMenuOpen ? 'mobile-open' : ''}`}>
         <div className="sidebar-header">
           <div className="title-area">
             <span className="logo-badge">JVM</span>
@@ -453,7 +458,14 @@ function App() {
       <main className="main-content">
         <header className="main-header">
           <div className="header-breadcrumbs">
-            <span>{t[lang].title}</span>
+            <button 
+              className="mobile-menu-btn"
+              onClick={() => setIsMobileMenuOpen(true)}
+              title="Open Menu"
+            >
+              ☰
+            </button>
+            <span className="breadcrumb-title">{t[lang].title}</span>
             <span className="divider">/</span>
             <span className="active-breadcrumb">{currentLecture.title.split(':')[0]}</span>
           </div>
