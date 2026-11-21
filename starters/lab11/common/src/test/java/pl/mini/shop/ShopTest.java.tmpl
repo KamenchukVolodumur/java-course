@@ -1,0 +1,163 @@
+package pl.mini.shop;
+
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+import pl.mini.shop.discount.*;
+import pl.mini.shop.events.*;
+import pl.mini.shop.model.*;
+import pl.mini.shop.pricing.*;
+
+import java.math.BigDecimal;
+import java.util.*;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+class ShopTest {
+
+    private static final Customer REGULAR = new Customer("Jan", CustomerType.REGULAR);
+
+    private static Order.Builder base() {
+        return Order.builder().customer(REGULAR).item("A", "10.00", 1).shipTo("x");
+    }
+
+    // ===== STAGE 1 =====
+
+    @Test
+    @Tag("stage1")
+    void validationMessages() {
+        assertEquals("{{noCustomer}}", assertThrows(IllegalStateException.class,
+                () -> Order.builder().item("A", "1.00", 1).shipTo("x").build()).getMessage());
+        assertEquals("{{noAddress}}", assertThrows(IllegalStateException.class,
+                () -> Order.builder().customer(REGULAR).item("A", "1.00", 1).build()).getMessage());
+        assertEquals("{{qtyPositive}}", assertThrows(IllegalArgumentException.class,
+                () -> Order.builder().item("A", "1.00", 0)).getMessage());
+    }
+
+    @Test
+    @Tag("stage1")
+    void orderIsImmutableAndToBuilderDoesNotChangeTheOriginal() {
+        Order o = base().build();
+        assertThrows(UnsupportedOperationException.class, () -> o.items().add(new OrderItem("B", BigDecimal.ONE, 1)));
+        Order changed = o.toBuilder().item("B", "5.00", 2).promoCode("MINUS20").build();
+        assertEquals(1, o.items().size());
+        assertEquals(Optional.empty(), o.promoCode());
+        assertEquals(new BigDecimal("20.00"), changed.subtotal());
+        assertEquals(Optional.of("MINUS20"), changed.promoCode());
+        assertEquals("x", changed.shippingAddress());
+    }
+
+    @Test
+    @Tag("stage1")
+    void blankPromoCodeIsAbsent() {
+        assertEquals(Optional.empty(), base().promoCode("  ").build().promoCode());
+        assertEquals(Optional.empty(), base().promoCode(null).build().promoCode());
+    }
+
+    @Test
+    @Tag("stage1")
+    void totalHasScaleTwo() {
+        assertEquals(new BigDecimal("29.97"), new OrderItem("C", new BigDecimal("9.99"), 3).total());
+        assertEquals(2, base().build().subtotal().scale());
+    }
+
+    // ===== STAGE 2 =====
+
+    @Test
+    @Tag("stage2")
+    void applicableOrderIsTypeThenBulkThenPromo() {
+        Order o = Order.builder().customer(new Customer("V", CustomerType.VIP)).item("A", "10.00", 5)
+                .shipTo("x").promoCode("WELCOME10").build();
+        assertEquals(List.of("vip", "bulk", "promo:WELCOME10"),
+                DiscountFactory.applicable(o).stream().map(DiscountPolicy::name).toList());
+    }
+
+    @Test
+    @Tag("stage2")
+    void studentDiscountIsCappedAt15() {
+        Order o = Order.builder().customer(new Customer("S", CustomerType.STUDENT)).item("A", "1000.00", 1).shipTo("x").build();
+        assertEquals(new Discount("student", new BigDecimal("15.00")), DiscountFactory.best(o));
+    }
+
+    @Test
+    @Tag("stage2")
+    void discountNeverExceedsSubtotal() {
+        Order o = Order.builder().customer(REGULAR).item("A", "5.00", 1).shipTo("x").promoCode("MINUS20").build();
+        assertEquals(new Discount("promo:MINUS20", new BigDecimal("5.00")), DiscountFactory.best(o));
+    }
+
+    @Test
+    @Tag("stage2")
+    void tieGoesToTheFirstPolicy() {
+        // VIP 15% of 200.00 = 30.00; WELCOME10 = 20.00; a STUDENT with WELCOME10 on 150.00: 15.00 vs 15.00
+        Order o = Order.builder().customer(new Customer("S", CustomerType.STUDENT)).item("A", "150.00", 1)
+                .shipTo("x").promoCode("WELCOME10").build();
+        assertEquals("student", DiscountFactory.best(o).source());
+    }
+
+    // ===== STAGE 3 =====
+
+    @Test
+    @Tag("stage3")
+    void inventoryIsAllOrNothing() {
+        Inventory inv = new Inventory(Map.of("A", 5, "B", 1));
+        Order o = Order.builder().customer(REGULAR).item("A", "1.00", 2).item("B", "1.00", 3).shipTo("x").build();
+        assertThrows(IllegalStateException.class, () -> inv.onPlaced(new OrderPlaced("1", o, BigDecimal.ONE)));
+        assertEquals(5, inv.stock("A"));
+        assertEquals(0, inv.stock("unknown"));
+    }
+
+    @Test
+    @Tag("stage3")
+    void listenersAreCalledInOrderAndOnlyForTheExactClass() {
+        OrderEvents events = new OrderEvents();
+        List<String> calls = new ArrayList<>();
+        events.subscribe(OrderPlaced.class, e -> calls.add("first"));
+        events.subscribe(OrderPlaced.class, e -> { throw new IllegalStateException("boom"); });
+        events.subscribe(OrderPlaced.class, e -> calls.add("third"));
+        events.subscribe(OrderCancelled.class, e -> calls.add("cancelled"));
+        events.publish(new OrderPlaced("1", base().build(), BigDecimal.ONE));
+        assertEquals(List.of("first", "third"), calls);
+        assertEquals(List.of("boom"), events.errors());
+    }
+
+    // ===== STAGE 4 =====
+
+    @Test
+    @Tag("stage4")
+    void standardShippingCosts15BelowThreshold() {
+        Priced p = new Shipping(new BasePrice(base().build(), new Discount("none", new BigDecimal("0.00"))), false);
+        assertEquals(new BigDecimal("25.00"), p.price());
+        assertEquals("{{itemsWord}} 10.00\n+ {{shipping}} 15.00", p.description());
+    }
+
+    @Test
+    @Tag("stage4")
+    void orderOfDecoratorsMatters() {
+        Order o = Order.builder().customer(REGULAR).item("A", "100.00", 1).shipTo("x").build();
+        Discount none = new Discount("none", new BigDecimal("0.00"));
+        assertEquals(new BigDecimal("107.10"), new Insurance(new GiftWrap(new BasePrice(o, none))).price());
+        assertEquals(new BigDecimal("107.00"), new GiftWrap(new Insurance(new BasePrice(o, none))).price());
+    }
+
+    // ===== STAGE 5 =====
+
+    @Test
+    @Tag("stage5")
+    void idsAreSequentialAndShippingIsAlwaysAdded() {
+        OrderService svc = new OrderService(new OrderEvents());
+        OrderRequest req = new OrderRequest(REGULAR, List.of(new OrderItem("A", new BigDecimal("10.00"), 1)),
+                "x", null, false, false, false);
+        Receipt r1 = svc.place(req), r2 = svc.place(req);
+        assertEquals("ORD-0001", r1.orderId());
+        assertEquals("ORD-0002", r2.orderId());
+        assertEquals(new BigDecimal("25.00"), r1.total());
+    }
+
+    @Test
+    @Tag("stage5")
+    void validationErrorsReachTheCaller() {
+        OrderService svc = new OrderService(new OrderEvents());
+        assertThrows(IllegalStateException.class,
+                () -> svc.place(new OrderRequest(REGULAR, List.of(), "x", null, false, false, false)));
+    }
+}

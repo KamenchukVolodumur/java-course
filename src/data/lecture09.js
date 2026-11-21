@@ -1,159 +1,297 @@
 export const lecture09 = {
   id: "09",
-  title: "Wykład 09: Współbieżność Asynchroniczna i Wirtualne Wątki (Project Loom)",
-  description: "Omówienie puli wątków (ExecutorService), asynchronicznej kompozycji zadań (CompletableFuture), formatowania danych oraz przełomowej technologii Wirtualnych Wątków w Javie 21.",
+  title: "Лекція 09: Пули потоків, CompletableFuture, віртуальні потоки та Flow API",
+  description: "ExecutorService і Future, асинхронна композиція через CompletableFuture (аналог Task і async/await), обробка помилок і тайм-аути, віртуальні потоки Java 21 і структурована конкурентність, реактивні потоки Flow API (аналог IAsyncEnumerable/IObservable), а також дати й час (java.time).",
   sections: [
     {
-      title: "1. Zarządzanie Wątkami: ExecutorService",
+      title: "1. ExecutorService — пул потоків",
       content: `
-Ręczne tworzenie obiektów \`Thread\` dla każdego zadania jest nieefektywne (tworzenie wątku OS jest kosztowne i zużywa ok. 1MB pamięci RAM na stos). Do zarządzania pulami wątków służy interfejs **\`java.util.concurrent.ExecutorService\`**.
+Створювати \`new Thread()\` на кожну задачу дорого: платформний потік — це потік ОС із мегабайтним стеком. **Пул потоків** тримає кілька потоків і роздає їм задачі з черги. Аналог \`ThreadPool\` і \`TaskScheduler\` у .NET.
 
-Klasa narzędziowa \`Executors\` pozwala na łatwe tworzenie pul:
-* **\`newFixedThreadPool(int n)\`**: Pula ze stałą liczbą wątków. Idealna do zadań o ograniczonych zasobach procesora.
-* **\`newCachedThreadPool()\`**: Tworzy nowe wątki w razie potrzeby, a nieużywane usuwa. Dobra do wielu krótkich, nieblokujących zadań.
-* **\`newScheduledThreadPool(int n)\`**: Umożliwia cykliczne lub opóźnione wywoływanie zadań.
-
-Przykład użycia:
 \`\`\`java
-ExecutorService executor = Executors.newFixedThreadPool(4);
+try (ExecutorService pool = Executors.newFixedThreadPool(4)) {   // AutoCloseable від Java 19
+    Future<Integer> f = pool.submit(() -> {       // Callable<Integer>
+        Thread.sleep(500);
+        return 42;
+    });
+    pool.submit(() -> System.out.println("Runnable без результату"));
 
-// Przesłanie zadania typu Runnable (nic nie zwraca)
-executor.submit(() -> System.out.println("Zadanie w puli"));
-
-// Przesłanie zadania typu Callable (zwraca wartość w obiekcie Future)
-Future<Integer> future = executor.submit(() -> {
-    Thread.sleep(1000);
-    return 42;
-});
-
-// Pobranie wyniku (metoda get() jest blokująca!)
-Integer result = future.get(); // 42
-
-// Zamykanie puli (zawsze konieczne!)
-executor.shutdown();
+    System.out.println("працюємо далі...");
+    Integer result = f.get();                     // блокує до завершення
+    Integer r2 = f.get(1, TimeUnit.SECONDS);      // з тайм-аутом -> TimeoutException
+}   // close() = shutdown() + очікування завершення всіх задач
 \`\`\`
-`
-    },
-    {
-      title: "2. Programowanie Asynchroniczne: CompletableFuture",
-      content: `
-Klasa \`Future\` nie pozwala na łatwe łączenie zadań w łańcuchy ani asynchroniczną reakcję na błędy. Java 8 wprowadziła klasę **\`CompletableFuture<T>\`**, która implementuje interfejs \`CompletionStage\` i reprezentuje asynchroniczny etap obliczeń, który można komponować bez blokowania wątków.
 
-Przykłady kompozycji asynchronicznej:
+| Фабрика | Поведінка |
+| --- | --- |
+| \`newFixedThreadPool(n)\` | n потоків, необмежена черга |
+| \`newCachedThreadPool()\` | створює потоки за потреби, прибирає ті, що простоюють |
+| \`newSingleThreadExecutor()\` | один потік: задачі виконуються послідовно |
+| \`newScheduledThreadPool(n)\` | \`schedule\`, \`scheduleAtFixedRate\` |
+| \`newWorkStealingPool()\` | ForkJoinPool |
+| \`newVirtualThreadPerTaskExecutor()\` | новий віртуальний потік на кожну задачу (Java 21) |
+
+### Завершення пулу (до Java 19 або без try-with-resources)
+
 \`\`\`java
-CompletableFuture.supplyAsync(() -> {
-    // Zadanie 1: Odczyt danych z sieci (uruchamiane w domyślnej puli ForkJoinPool.commonPool)
-    return "Dane użytkownika";
-})
-.thenApply(data -> {
-    // Zadanie 2: Transformacja danych (wywoływane po zakończeniu Zadania 1)
-    return data + " (zanalizowane)";
-})
-.thenAccept(result -> {
-    // Zadanie 3: Konsumpcja wyniku
-    System.out.println("Wynik końcowy: " + result);
-})
-.exceptionally(throwable -> {
-    // Obsługa błędów na dowolnym etapie łańcucha
-    System.err.println("Błąd: " + throwable.getMessage());
-    return null;
-});
+pool.shutdown();                                   // нових задач не приймаємо
+if (!pool.awaitTermination(10, TimeUnit.SECONDS)) {
+    pool.shutdownNow();                            // interrupt усім потокам
+}
 \`\`\`
-`
-    },
-    {
-      title: "3. Wirtualne Wątki (Virtual Threads) - Project Loom (Java 21)",
-      content: `
-Przed wersją Java 21, jeden wątek Java (\`Thread\`) odpowiadał dokładnie jednemu wątkowi systemu operacyjnego (Platform Thread / Kernel Thread). Powodowało to ograniczenie liczby wątków do kilku tysięcy z powodu zużycia pamięci i narzutu na przełączanie kontekstu (context switching) w OS.
-
-Java 21 wprowadza **Wirtualne Wątki (Virtual Threads)**, rozwijane w ramach projektu **Loom**. 
-* Są to niezwykle tanie wątki (od kilkuset bajtów do kilku KB na wątek), zarządzane bezpośrednio przez JVM w pamięci sterty, a nie przez system operacyjny.
-* Możemy uruchomić **miliony** wirtualnych wątków jednocześnie.
-* Kiedy wirtualny wątek wykonuje blokującą operację I/O (np. zapytanie do bazy danych, czytanie pliku), JVM odmontowuje go z fizycznego wątku nośnego (Carrier Thread) i parkuje. Wątek fizyczny w tym czasie wykonuje inne wirtualne wątki. Po zakończeniu I/O, wirtualny wątek jest przywracany na wolny wątek fizyczny.
 
 > [!WARNING]
-> **Thread Pinning**: Gdy wirtualny wątek wykonuje kod wewnątrz bloku \`synchronized\` lub wywołuje kod natywny (JNI/FFM) i napotyka operację blokującą I/O, nie może zostać odmontowany od wątku nośnego (Carrier Thread). Powoduje to fizyczne zablokowanie wątku nośnego. Zaleca się używanie \`ReentrantLock\` zamiast \`synchronized\` w kodzie przeznaczonym dla wirtualnych wątków.
+> Якщо задача, передана через \`submit\`, кинула виняток, він **не з'явиться в лозі**, а збережеться у \`Future\` і вилетить лише з \`get()\` як \`ExecutionException\`. Якщо результат ніхто не читає, помилка зникне безслідно.
 
-Dzięki temu pisanie kodu blokującego staje się wysoce wydajne, bez potrzeby stosowania skomplikowanych frameworków reaktywnych (jak WebFlux czy RxJava).
+### invokeAll / invokeAny
 
-Od Javy 21 dostępna jest również (w wersji preview) funkcjonalność **Structured Concurrency** (JEP 462), umożliwiająca grupowanie powiązanych wirtualnych wątków za pomocą \`StructuredTaskScope\`, co zapewnia automatyczne anulowanie podzadań w przypadku awarii jednego z nich.
-
-Tworzenie wirtualnych wątków:
 \`\`\`java
-// 1. Bezpośrednie uruchomienie wątku wirtualnego
-Thread.startVirtualThread(() -> {
-    System.out.println("Działam w wątku wirtualnym!");
-});
-
-// 2. Użycie dedykowanego Executora (tworzy nowy wątek wirtualny dla każdego zadania)
-try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-    executor.submit(() -> {
-        // Operacja blokująca I/O
-        Thread.sleep(1000);
-        return "Gotowe";
-    });
-} // Automatyczne zamknięcie puli (try-with-resources) czeka na zakończenie zadań
+List<Callable<String>> tasks = urls.stream().<Callable<String>>map(u -> () -> download(u)).toList();
+List<Future<String>> all = pool.invokeAll(tasks);     // чекає на всі
+String fastest = pool.invokeAny(tasks);               // перший успішний, решта скасовуються
 \`\`\`
 `
     },
     {
-      title: "4. Formatowanie Danych (Date, Time, String)",
+      title: "2. CompletableFuture — асинхронна композиція",
       content: `
-### String.format i System.out.printf:
-Java oferuje klasyczny mechanizm formatowania w stylu C:
+\`Future.get()\` блокує потік. \`CompletableFuture<T>\` дозволяє **будувати ланцюжки** дій, які виконаються, коли буде готовий результат. Це найближчий аналог \`Task<T>\` з \`ContinueWith\`. Ключових слів \`async/await\` у Java немає. Їх заміняють ланцюжки або (від Java 21) звичайний блокувальний код у віртуальних потоках.
+
 \`\`\`java
-String info = String.format("Witaj %s! Masz %d powiadomień. Saldo: %.2f PLN", "Anna", 5, 120.538);
-// "Witaj Anna! Masz 5 powiadomień. Saldo: 120.54 PLN"
+CompletableFuture<User> userF = CompletableFuture.supplyAsync(() -> api.fetchUser(id), pool);
+
+userF
+    .thenApply(User::email)                              // map: T -> R
+    .thenCompose(email -> mailer.sendAsync(email))       // flatMap: T -> CompletableFuture<R>
+    .thenAccept(status -> log.info("надіслано: {}", status))   // кінцева дія
+    .exceptionally(ex -> { log.error("збій", ex); return null; });
 \`\`\`
 
-### Nowoczesny czas: Java Date/Time API (java.time):
-Wprowadzony w Javie 8 pakiet zastępuje stare, wadliwe klasy \`Date\` i \`Calendar\`. Nowe klasy są **niemutowalne** i bezpieczne wielowątkowo:
-* **\`LocalDate\`**: Sama data (rok, miesiąc, dzień) - np. \`LocalDate.now()\`.
-* **\`LocalTime\`**: Sam czas (godzina, minuta, sekunda).
-* **\`LocalDateTime\`**: Data i czas bez strefy czasowej.
-* **\`ZonedDateTime\`**: Pełna data, czas i strefa czasowa.
-* **\`DateTimeFormatter\`**: Służy do parsowania i formatowania dat:
+| Метод | Аналог | Опис |
+| --- | --- | --- |
+| \`supplyAsync(supplier [, executor])\` | \`Task.Run\` | запуск задачі з результатом |
+| \`runAsync(runnable)\` | \`Task.Run\` | задача без результату |
+| \`thenApply(f)\` | \`ContinueWith\` + результат | перетворення результату |
+| \`thenCompose(f)\` | \`await\` всередині \`async\` | продовження, що саме асинхронне |
+| \`thenCombine(other, f)\` | \`WhenAll\` для двох задач | поєднати два результати |
+| \`allOf(...)\` | \`Task.WhenAll\` | дочекатися всіх |
+| \`anyOf(...)\` | \`Task.WhenAny\` | дочекатися першої |
+| \`exceptionally(f)\` | \`catch\` | значення на випадок помилки |
+| \`handle((res, ex) -> ...)\` | \`try/catch\` | обробка і успіху, і помилки |
+| \`orTimeout\`, \`completeOnTimeout\` | \`WaitAsync(timeout)\` | тайм-аути |
+| \`join()\` / \`get()\` | \`.Result\` / \`await\` | блокувальне очікування |
+
+### Паралельне завантаження
+
 \`\`\`java
-LocalDateTime now = LocalDateTime.now();
-DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-String text = now.format(formatter); // "2026-07-07 22:55:00"
+List<CompletableFuture<Weather>> futures = cities.stream()
+        .map(city -> CompletableFuture
+                .supplyAsync(() -> client.fetch(city), pool)
+                .orTimeout(3, TimeUnit.SECONDS)
+                .exceptionally(ex -> Weather.unknown(city)))   // одне місто не валить усе
+        .toList();
+
+CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new)).join();
+List<Weather> results = futures.stream().map(CompletableFuture::join).toList();
 \`\`\`
+
+> [!CAUTION]
+> Без власного executor \`supplyAsync\` використовує \`ForkJoinPool.commonPool()\`. Блокувальні операції (HTTP, БД) у ньому «з'їдають» потоки, потрібні паралельним stream-ам усієї програми. Для I/O завжди передавайте окремий пул (або віртуальні потоки).
+
+> [!NOTE]
+> Винятки в ланцюжку загортаються в \`CompletionException\`. Справжня причина — у \`ex.getCause()\`.
+`
+    },
+    {
+      title: "3. Віртуальні потоки (Java 21, Project Loom)",
+      content: `
+**Платформний** потік = потік ОС: ~1 МБ стеку, дороге перемикання, на машину їх влазять тисячі. **Віртуальний** потік — легкий потік, яким керує JVM: стек зберігається в купі і росте за потреби, а самих потоків можуть бути **мільйони**.
+
+\`\`\`java
+try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+    IntStream.range(0, 100_000).forEach(i ->
+        executor.submit(() -> {
+            Thread.sleep(Duration.ofSeconds(1));   // блокування НЕ займає потік ОС
+            return i;
+        }));
+}   // 100 000 задач, кожна по 1 с, займуть разом приблизно 1 с
+
+Thread.startVirtualThread(() -> System.out.println("привіт з віртуального потоку"));
+\`\`\`
+
+### Як це працює
+
+Віртуальні потоки виконуються на невеликому пулі **потоків-носіїв** (carrier threads; їх стільки, скільки ядер). Коли віртуальний потік блокується на I/O, \`sleep\` чи \`BlockingQueue\`, JVM **відмонтовує** його від носія і зберігає стек у купі, а носій бере наступний віртуальний потік.
+
+Результат: можна писати **простий блокувальний код** (як у C# з \`await\`, але без \`async\`-«зараження» сигнатур), і він масштабується так само добре, як асинхронний.
+
+| | Платформні | Віртуальні |
+| --- | --- | --- |
+| Кількість | тисячі | мільйони |
+| Створення | дороге → пули | дешеве → потік на задачу, без пулів |
+| Призначення | CPU-bound обчислення | I/O-bound задачі (HTTP, БД, файли) |
+
+> [!WARNING]
+> Віртуальні потоки **не прискорюють обчислень**: для CPU-задач кількість ядер не зміниться. Не створюйте з них пулів (вони дешеві) і не кешуйте важкі об'єкти в \`ThreadLocal\`: потоків може бути мільйон. До Java 24 \`synchronized\` з блокуванням усередині «прибивав» (pinning) віртуальний потік до носія, тому для довгих секцій радили \`ReentrantLock\`.
+
+### Структурована конкурентність (preview)
+
+\`StructuredTaskScope\` групує підзадачі: якщо одна з них падає, решта скасовується, а жодна не «втече» за межі блоку. Ідея близька до \`Task.WhenAll\` з \`CancellationToken\`.
+
+\`\`\`java
+try (var scope = StructuredTaskScope.open()) {        // API Java 25 (preview)
+    var user  = scope.fork(() -> findUser(id));
+    var order = scope.fork(() -> fetchOrder(id));
+    scope.join();                                     // чекаємо обидві; помилка -> виняток
+    return new Response(user.get(), order.get());
+}
+\`\`\`
+`
+    },
+    {
+      title: "4. Реактивні потоки: Flow API",
+      content: `
+Stream (лекція 05) — це **pull**-модель: споживач сам запитує наступний елемент. Коли дані надходять **асинхронно** (події, повідомлення, рядки з мережі), потрібна **push**-модель з **backpressure**: споживач повідомляє, скільки елементів готовий прийняти.
+
+\`java.util.concurrent.Flow\` (Java 9) — стандартні інтерфейси Reactive Streams. Аналоги: \`IObservable<T>\` і \`IAsyncEnumerable<T>\` у .NET.
+
+\`\`\`text
+Publisher --subscribe--> Subscriber
+          <--request(n)--   (backpressure)
+          ---onNext(x)--->  (не більше n разів)
+          ---onComplete / onError-->
+\`\`\`
+
+\`\`\`java
+class PrintSubscriber implements Flow.Subscriber<String> {
+    private Flow.Subscription subscription;
+
+    @Override public void onSubscribe(Flow.Subscription s) {
+        this.subscription = s;
+        s.request(1);                        // готовий прийняти 1 елемент
+    }
+    @Override public void onNext(String item) {
+        System.out.println("отримано: " + item);
+        subscription.request(1);             // беремо наступний
+    }
+    @Override public void onError(Throwable t) { t.printStackTrace(); }
+    @Override public void onComplete() { System.out.println("кінець"); }
+}
+
+try (var publisher = new SubmissionPublisher<String>()) {   // готова реалізація з буфером
+    publisher.subscribe(new PrintSubscriber());
+    List.of("a", "b", "c").forEach(publisher::submit);      // блокується, якщо буфер повний
+}   // close() надсилає onComplete
+\`\`\`
+
+\`Flow.Processor<T, R>\` — це одночасно Subscriber і Publisher, тобто проміжна ланка конвеєра.
+
+> [!NOTE]
+> Самі по собі ці інтерфейси низькорівневі. На практиці використовують Project Reactor (\`Flux\`/\`Mono\`, Spring WebFlux) або RxJava, які реалізують ті самі інтерфейси та мають сотні операторів (\`map\`, \`filter\`, \`buffer\`, \`debounce\`). А з віртуальними потоками багато реактивного коду можна замінити простим блокувальним.
+`
+    },
+    {
+      title: "5. Дата і час: java.time",
+      content: `
+Старі \`java.util.Date\` і \`Calendar\` змінювані й незручні, не використовуйте їх. Пакет \`java.time\` (Java 8) складається з **незмінних** потокобезпечних типів.
+
+| Тип | Що зберігає | Приклад |
+| --- | --- | --- |
+| \`LocalDate\` | дата без часу і зони | 2025-03-14 |
+| \`LocalTime\` | час без дати | 10:15:30 |
+| \`LocalDateTime\` | дата + час без зони | 2025-03-14T10:15:30 |
+| \`ZonedDateTime\` | дата + час + часова зона | ...+01:00[Europe/Warsaw] |
+| \`Instant\` | момент на шкалі UTC | для логів і БД |
+| \`Duration\` | тривалість у секундах/наносекундах | PT2H30M |
+| \`Period\` | тривалість у днях/місяцях/роках | P1Y2M |
+
+\`\`\`java
+LocalDate today = LocalDate.now();
+LocalDate exam = LocalDate.of(2025, Month.JUNE, 20);
+long days = ChronoUnit.DAYS.between(today, exam);
+LocalDate nextMonday = today.with(TemporalAdjusters.next(DayOfWeek.MONDAY));
+LocalDate plus = today.plusWeeks(2).minusDays(1);       // повертає НОВИЙ об'єкт
+
+Instant start = Instant.now();
+// ...
+Duration took = Duration.between(start, Instant.now());
+System.out.println(took.toMillis() + " мс");
+
+ZonedDateTime warsaw = ZonedDateTime.now(ZoneId.of("Europe/Warsaw"));
+ZonedDateTime kyiv = warsaw.withZoneSameInstant(ZoneId.of("Europe/Kyiv"));
+
+DateTimeFormatter fmt = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm");
+String s = LocalDateTime.now().format(fmt);             // "14.03.2025 10:15"
+LocalDateTime parsed = LocalDateTime.parse("01.02.2025 08:00", fmt);
+LocalDate iso = LocalDate.parse("2025-03-14");          // ISO-8601 без форматера
+\`\`\`
+
+> [!TIP]
+> У базі даних і в мережевих протоколах зберігайте \`Instant\` (UTC). У часову зону користувача переводьте лише під час показу.
 `
     }
   ],
   quiz: [
     {
-      question: "Co dzieje się z fizycznym wątkiem procesora (Carrier Thread), gdy wirtualny wątek Java 21 wykonuje blokującą operację wejścia/wyjścia (np. Thread.sleep() lub I/O)?",
+      question: "Задача, передана через executor.submit(), кинула виняток. Що станеться?",
       options: [
-        "Wątek fizyczny zostaje zablokowany i czeka, marnując zasoby procesora.",
-        "JVM automatycznie odmontowuje zablokowany wątek wirtualny, zwalniając wątek fizyczny do wykonywania innych wątków wirtualnych.",
-        "System operacyjny kończy proces aplikacji.",
-        "Zostaje rzucony wyjątek VirtualThreadBlockedException."
+        "Виняток надрукується в консоль і зупинить програму",
+        "Виняток збережеться у Future і буде кинутий з get() як ExecutionException",
+        "Пул потоків зупиниться",
+        "Виняток буде проігноровано назавжди"
       ],
       answer: 1,
-      explanation: "Jest to kluczowa zaleta wirtualnych wątków. Kiedy następuje blokada I/O, wirtualny wątek jest parkowany w pamięci sterty, a Carrier Thread natychmiast przejmuje inne zadania."
+      explanation: "submit загортає задачу у FutureTask. Якщо результат не читають, помилка зникне безслідно."
     },
     {
-      question: "Która metoda w klasie CompletableFuture pozwala na transformację wyniku asynchronicznego (analogicznie do map w strumieniach)?",
+      question: "Чим thenCompose відрізняється від thenApply?",
       options: [
-        "thenAccept(Consumer)",
-        "thenApply(Function)",
-        "exceptionally(Function)",
-        "allOf(CompletableFuture[])"
+        "Нічим",
+        "thenCompose приймає функцію, що повертає CompletableFuture, і «сплющує» результат; thenApply — звичайне перетворення значення",
+        "thenCompose виконується синхронно",
+        "thenApply обробляє винятки"
       ],
       answer: 1,
-      explanation: "Metoda 'thenApply' przyjmuje interfejs funkcyjny Function, transformuje wynik asynchroniczny z typu T na U i zwraca nowy CompletableFuture<U>."
+      explanation: "Аналогія з потоками: thenApply — це map, а thenCompose — flatMap. Без thenCompose вийде CompletableFuture<CompletableFuture<T>>."
     },
     {
-      question: "Co charakteryzuje klasy z pakietu java.time (wprowadzonego w Java 8, np. LocalDate, LocalDateTime)?",
+      question: "Коли віртуальні потоки дають найбільший виграш?",
       options: [
-        "Są mutowalne i wymagają synchronizacji w aplikacjach wielowątkowych.",
-        "Są całkowicie niemutowalne (thread-safe) - każda modyfikacja (np. plusDays(1)) zwraca nowy obiekt.",
-        "Są przestarzałe i nie zaleca się ich używania.",
-        "Służą wyłącznie do formatowania plików tekstowych."
+        "Для обчислень, що навантажують CPU",
+        "Для великої кількості задач, які переважно чекають на I/O",
+        "Для GUI",
+        "Завжди однаково"
       ],
       answer: 1,
-      explanation: "Klasy z pakietu java.time są niemutowalne (immutable) i dzięki temu bezpieczne w środowiskach wielowątkowych (brak ryzyka wyścigu - race conditions)."
+      explanation: "Під час блокування віртуальний потік звільняє потік-носій, тому можна тримати мільйони паралельних I/O-операцій. Для CPU-bound задач кількість ядер не змінюється."
+    },
+    {
+      question: "Що таке backpressure у Flow API?",
+      options: [
+        "Тиск на GC",
+        "Механізм, через який підписник повідомляє видавцю, скільки елементів готовий прийняти (request(n))",
+        "Повторна відправка після помилки",
+        "Пріоритет потоків"
+      ],
+      answer: 1,
+      explanation: "Publisher не має права надіслати більше елементів, ніж підписник запросив через request(n). Так повільний споживач не захлинеться даними."
+    },
+    {
+      question: "Який тип java.time найкраще підходить для збереження моменту події в базі даних?",
+      options: ["LocalDateTime", "LocalDate", "Instant", "String"],
+      answer: 2,
+      explanation: "Instant — однозначна точка на шкалі UTC. LocalDateTime не має зони і тому неоднозначний."
+    },
+    {
+      question: "Чому для I/O-задач у supplyAsync варто передавати власний executor?",
+      options: [
+        "Інакше задача не виконається",
+        "За замовчуванням використовується ForkJoinPool.commonPool, і блокування в ньому гальмує паралельні stream-и всієї програми",
+        "Власний executor автоматично повторює запити",
+        "Так вимагає компілятор"
+      ],
+      answer: 1,
+      explanation: "commonPool має стільки потоків, скільки ядер, мінус один, і розрахований на CPU-задачі. Блокувальний I/O швидко його вичерпує."
     }
   ]
 };

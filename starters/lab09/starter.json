@@ -1,0 +1,136 @@
+{
+  "messages": {
+    "line1": {
+      "ua": "рядок 1",
+      "en": "line 1"
+    },
+    "line2": {
+      "ua": "рядок 2",
+      "en": "line 2"
+    },
+    "quotes": {
+      "ua": "лапки",
+      "en": "quotes"
+    },
+    "no": {
+      "ua": "ні",
+      "en": "no"
+    },
+    "hello": {
+      "ua": "привіт",
+      "en": "hello"
+    },
+    "everyone": {
+      "ua": "усім",
+      "en": "everyone"
+    },
+    "city": {
+      "ua": "Варшава",
+      "en": "Warsaw"
+    },
+    "atlantis": {
+      "ua": "Атлантида",
+      "en": "Atlantis"
+    },
+    "hi": {
+      "ua": "привіт",
+      "en": "hi"
+    },
+    "silence": {
+      "ua": "тиша",
+      "en": "silence"
+    },
+    "welcome": {
+      "ua": "вітаємо, %s! онлайн: %d",
+      "en": "welcome, %s! online: %d"
+    },
+    "joined": {
+      "ua": "%s приєднався",
+      "en": "%s joined"
+    },
+    "left": {
+      "ua": "%s вийшов",
+      "en": "%s left"
+    },
+    "noData": {
+      "ua": "немає даних для %s",
+      "en": "no data for %s"
+    },
+    "nameTaken": {
+      "ua": "ім'я %s зайняте",
+      "en": "name %s is taken"
+    },
+    "joinFirst": {
+      "ua": "спочатку join",
+      "en": "join first"
+    },
+    "malformed": {
+      "ua": "некоректне повідомлення",
+      "en": "malformed message"
+    },
+    "noResponse": {
+      "ua": "немає відповіді",
+      "en": "no response"
+    },
+    "errorImport": {
+      "ua": "явний імпорт: інакше Error неоднозначний із java.lang.Error",
+      "en": "a single-type import: otherwise Error is ambiguous with java.lang.Error"
+    },
+    "loopNote": {
+      "ua": "decode кидає checked-виняток: цикл, а не лямбда",
+      "en": "decode throws a checked exception: a loop, not a lambda"
+    }
+  },
+  "readme": {
+    "title": {
+      "ua": "Лабораторна 09: TCP-чат з погодою",
+      "en": "Lab 09: A TCP Chat with Weather"
+    },
+    "jdk": 21,
+    "files": [
+      {
+        "names": [
+          "Main.java"
+        ],
+        "status": "main"
+      },
+      {
+        "names": [
+          "Message",
+          "ProtocolException",
+          "WeatherProvider"
+        ],
+        "status": "given"
+      },
+      {
+        "names": [
+          "MessageCodec",
+          "ChatServer",
+          "ChatClient",
+          "OpenMeteoProvider"
+        ],
+        "status": "yours"
+      },
+      {
+        "names": [
+          "src/test/java/..."
+        ],
+        "status": "tests"
+      }
+    ],
+    "mains": [
+      "pl.mini.chat.Main"
+    ],
+    "stages": [
+      "stage1",
+      "stage2",
+      "stage3",
+      "stage4",
+      "stage5"
+    ],
+    "notes": {
+      "ua": "> Jackson уже додано в `pom.xml`. Анотації `@JsonTypeInfo`/`@JsonSubTypes` на `Message` додайте самі (або напишіть власний кодек). Клас для обслуговування одного клієнта (`ClientHandler`) створіть самостійно.\n>\n> Тести етапів 2–5 запускають сервер на вільному порту з підробним `WeatherProvider`, тож інтернет для них не потрібен. `OpenMeteoProvider` перевірте вручну.",
+      "en": "> Jackson is already in `pom.xml`. Add the `@JsonTypeInfo`/`@JsonSubTypes` annotations to `Message` yourself (or write your own codec). Create the class that serves one client (`ClientHandler`) yourself.\n>\n> The tests of stages 2–5 start the server on a free port with a fake `WeatherProvider`, so they do not need the internet. Check `OpenMeteoProvider` by hand."
+    }
+  }
+}

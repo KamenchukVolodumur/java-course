@@ -1,0 +1,3 @@
+Java is a programming language.
+Java runs on the JVM,
+and the JVM runs everywhere!

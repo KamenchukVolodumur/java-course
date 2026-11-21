@@ -1,263 +1,304 @@
 export const lab07 = {
   id: "Lab07",
-  title: "Лабораторна 7: Асинхронний Погодний Клієнт",
-  description: "Створення HTTP-клієнта, що паралельно завантажує дані з REST API з використанням CompletableFuture, парсингом JSON та обробкою мережевих збоїв.",
+  title: "Лабораторна 07: Анотації та рефлексія — міні-JUnit, серіалізатор і плагіни",
+  description: "Власні анотації з RetentionPolicy.RUNTIME, тест-раннер на рефлексії (@Test, @BeforeEach, @Disabled, очікувані винятки), серіалізатор records у JSON з анотаціями @JsonName/@JsonIgnore, завантаження плагінів за назвою класу і динамічні проксі для логування й кешування.",
   sections: [
     {
-      title: "Опис завдання",
+      title: "Перед початком",
       content: `
 > [!NOTE]
-> **Рекомендовані лекції для цієї лаби:** Лекція 09 (CompletableFuture), Лекція 10 (HttpClient), Лекція 17 (REST API & JSON).
+> **Лекції:** 04.8 «Generics», 08.1 «Анотації», 08.2 «Рефлексія», 08.3 «Модулі й завантажувачі класів» · **Час:** 3 год · **Бали:** 10
 
-У цій лабораторній роботі ми напишемо програму, яка дізнається погоду в кількох містах світу одночасно. 
+Ви напишете спрощені версії механізмів, на яких тримаються JUnit, Jackson і Spring. Після цієї лабораторної «магія» фреймворків стане зрозумілою.
 
-Ми використаємо публічне API **Open-Meteo** (яке не вимагає реєстрації та ключів).
-Щоб програма працювала швидко, ми відійдемо від "послідовного" виконання коду (де кожне місто чекає своєї черги) і реалізуємо **асинхронні HTTP-запити**, об'єднавши їхні результати за допомогою \`CompletableFuture\`.
+\`\`\`text
+src/main/java/pl/mini/reflect/
+├── testing/   Test.java  BeforeEach.java  Disabled.java  Assert.java  TestRunner.java  TestReport.java
+├── json/      JsonName.java  JsonIgnore.java  Json.java
+├── plugins/   Plugin.java  PluginInfo.java  PluginRegistry.java
+├── proxy/     Cacheable.java  Proxies.java
+└── Main.java  (наданий)
+\`\`\`
 
-Ця лабораторна навчить вас мислити "паралельно" і вирішувати типові для Backend-розробника задачі:
-* Як відправити GET запит.
-* Як "відмапити" (десеріалізувати) JSON у Java об'єкт (Record).
-* Як не заблокувати головний потік під час очікування відповіді від сервера.
-* Як безпечно впоратися з відвалом мережі (Timeouts & Fallbacks).
+### Правила
+
+* Розкоментовуйте блоки \`STAGE N\` у \`Main\` по черзі. Вивід має збігатися з очікуваним.
+* Порядок методів, що повертає \`getDeclaredMethods()\`, **не гарантовано**. Скрізь, де важливий порядок, сортуйте за назвою.
+
+> [!CAUTION]
+> Заборонено використовувати готові бібліотеки (JUnit, Jackson, Gson, ByteBuddy). Лише \`java.lang.reflect\` і \`java.lang.annotation\`.
 `
     },
     {
-      title: "Task 1: Модель даних (Record) та Jackson (1 бал)",
+      title: "Швидке повторення теорії",
       content: `
-Спочатку налаштуємо проект. Вам знадобиться бібліотека **Jackson** для парсингу JSON. Додайте її у ваш \`pom.xml\`:
-\`\`\`xml
-<dependency>
-    <groupId>com.fasterxml.jackson.core</groupId>
-    <artifactId>jackson-databind</artifactId>
-    <version>2.15.2</version>
-</dependency>
-\`\`\`
+### Оголошення анотації
 
-API Open-Meteo повертає величезний JSON. Наприклад, запит погоди для Києва:
-\`https://api.open-meteo.com/v1/forecast?latitude=50.45&longitude=30.52&current_weather=true\`
-
-Поверне такий JSON:
-\`\`\`json
-{
-  "latitude": 50.45,
-  "longitude": 30.52,
-  "current_weather": {
-    "temperature": 15.3,
-    "windspeed": 10.2,
-    "weathercode": 3
-  }
+\`\`\`java
+@Retention(RetentionPolicy.RUNTIME)       // без цього рефлексія анотації не побачить!
+@Target(ElementType.METHOD)
+public @interface Test {
+    Class<? extends Throwable> expected() default None.class;
+    final class None extends Throwable { private None() { } }
 }
 \`\`\`
 
-Ми не хочемо писати складні класи. Створіть DTO (Data Transfer Object) використовуючи **Records**. Jackson вміє автоматично "вкладати" Records один в один, якщо їхні назви полів збігаються з ключами в JSON.
+### Рефлексія: методи, конструктори, виклик
 
 \`\`\`java
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+Class<?> c = obj.getClass();
+Method[] ms = c.getDeclaredMethods();          // усі методи ЦЬОГО класу
+Arrays.sort(ms, Comparator.comparing(Method::getName));
 
-// Ignorujemy wszystkie inne pola z JSONa, których nie zdefiniowaliśmy w Recordzie
-@JsonIgnoreProperties(ignoreUnknown = true)
-public record WeatherResponse(CurrentWeather current_weather) {}
-
-@JsonIgnoreProperties(ignoreUnknown = true)
-// TODO: Stwórz record CurrentWeather, który będzie miał dwa pola: 
-// 1. double temperature
-// 2. double windspeed
-\`\`\`
-`
-    },
-    {
-      title: "Task 2: Клієнт для API (Синхронно) (1 бал)",
-      content: `
-Створіть клас \`WeatherClient\`. Почнемо з простого, "поганого" підходу — синхронного запиту, щоб потім відчути різницю в швидкості.
-
-\`\`\`java
-import com.fasterxml.jackson.databind.ObjectMapper;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-
-public class WeatherClient {
-    private final HttpClient httpClient;
-    private final ObjectMapper objectMapper;
-
-    public WeatherClient() {
-        // TODO 1: Zainicjalizuj httpClient używając HttpClient.newHttpClient()
-        // TODO 2: Zainicjalizuj objectMapper (new ObjectMapper())
-    }
-
-    public double fetchTemperatureSync(double lat, double lon) {
-        String url = String.format("https://api.open-meteo.com/v1/forecast?latitude=%f&longitude=%f&current_weather=true", lat, lon);
-
-        // TODO 3: Zbuduj zapytanie HttpRequest (GET) dla podanego URL
-        /*
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(url))
-                .GET()
-                .build();
-        */
-
-        // TODO 4: Wyślij zapytanie synchronicznie używając httpClient.send(...)
-        // Podpowiedź: użyj HttpResponse.BodyHandlers.ofString()
-        
-        // TODO 5: Z użyciem objectMapper.readValue(response.body(), WeatherResponse.class)
-        // przekonwertuj JSON na obiekt i zwróć samą temperaturę.
-        
-        return 0.0; // Zmień to!
-    }
+Object instance = c.getDeclaredConstructor().newInstance();
+m.setAccessible(true);                         // для не-public методів
+try {
+    m.invoke(instance);
+} catch (InvocationTargetException e) {
+    Throwable real = e.getCause();             // справжній виняток із методу
 }
 \`\`\`
+
+### Records через рефлексію
+
+\`\`\`java
+for (RecordComponent rc : obj.getClass().getRecordComponents()) {   // у порядку оголошення
+    String name = rc.getName();
+    Object value = rc.getAccessor().invoke(obj);
+    JsonName ann = rc.getAnnotation(JsonName.class);    // анотація з @Target(RECORD_COMPONENT)
+}
+\`\`\`
+
+### Динамічний проксі
+
+\`\`\`java
+@SuppressWarnings("unchecked")
+static <T> T wrap(T target, Class<T> iface, InvocationHandler h) {
+    return (T) Proxy.newProxyInstance(iface.getClassLoader(), new Class<?>[]{iface}, h);
+}
+\`\`\`
+
+Через \`InvocationHandler\` проходять **усі** виклики проксі, включно з \`toString\`, \`hashCode\` і \`equals\`.
 `
     },
     {
-      title: "Task 3: Асинхронна магія CompletableFuture (2 бали)",
+      title: "Очікуваний вивід",
       content: `
-Якщо у нас 10 міст, і сервер відповідає за 0.5 секунди, синхронний метод буде працювати 5 секунд. Це неприпустимо для бекенду.
+Так має виглядати вивід \`Main\` зі стартового проєкту, коли розкоментовано всі етапи:
 
-Додайте метод \`fetchTemperatureAsync\` до вашого \`WeatherClient\`.
-
-\`\`\`java
-import java.util.concurrent.CompletableFuture;
-
-public class WeatherClient {
-    // ... poprzedni kod ...
-
-    public CompletableFuture<Double> fetchTemperatureAsync(double lat, double lon) {
-        String url = String.format(Locale.US, "https://api.open-meteo.com/v1/forecast?latitude=%f&longitude=%f&current_weather=true", lat, lon);
-        
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(url))
-                .GET()
-                .build();
-
-        // TODO 1: Użyj httpClient.sendAsync() zamiast send().
-        // Pamiętaj, że to zwraca CompletableFuture<HttpResponse<String>>
-        
-        // TODO 2: Użyj metody .thenApply() aby przetransformować otrzymany HttpResponse 
-        // na obiekt WeatherResponse (używając objectMapper wewnątrz lambdy).
-        // Uwaga: objectMapper rzuca Checked Exception (JsonProcessingException).
-        // Wewnątrz lambdy musisz użyć try-catch i w razie błędu rzucić np. RuntimeException.
-        
-        // TODO 3: Użyj kolejnego .thenApply() aby wyciągnąć samą temperaturę z WeatherResponse.
-        
-        return null; // Zwróć utworzony łańcuch CompletableFuture!
-    }
-}
+\`\`\`text
+✓ addsElement
+✓ freshDataEachTime
+- notReady (вимкнено)
+Пройдено: 2, провалено: 0, пропущено: 1
+✗ crashes: IllegalStateException: бум
+✓ dividesByZero
+✗ expectedButNotThrown: очікувався IllegalStateException
+✗ wrongSum: очікувалось 7, отримано 6
+Пройдено: 1, провалено: 3, пропущено: 0
+{"name":"Анна","age":21,"address":{"city":"Варшава","zip_code":"00-661"},"tags":["java","kotlin"],"score":null}
+["say \\"hi\\"",1,true]
+OK: непідтримуваний тип: java.lang.Object
+NotAPlugin: не реалізує Plugin
+NoDefaultCtor: немає публічного конструктора без параметрів
+pl.mini.Missing: клас не знайдено
+reverse v?
+upper v1.2
+AVAJ
+2 [price(tea) -> 4.5, price(coffee) -> 9.0, hello(Ola) -> Hi Ola, hello(Ola) -> Hi Ola]
+OK: NPE, price(null) !! NullPointerException
 \`\`\`
 `
     },
     {
-      title: "Task 4: Стійкість до збоїв (Resilience) (1 бал)",
+      title: "Етап 1: Тест-раннер (2 б.)",
       content: `
-Що, якщо API Open-Meteo "зависне" і не буде відповідати 30 секунд? Наш \`CompletableFuture\` буде чекати вічно, блокуючи ресурси.
+Анотації (усі \`RUNTIME\`, \`METHOD\`): \`@Test\` (з елементом \`expected\`, див. теорію), \`@BeforeEach\`, \`@Disabled\`.
 
-Додайте до вашого ланцюжка (\`chain\`) у методе \`fetchTemperatureAsync\` дві речі (доступні від Javy 9+):
+\`\`\`java
+public final class Assert {
+    public static void equal(Object expected, Object actual);   // AssertionError("очікувалось E, отримано A")
+}
 
-1. **Timeout:** Обмежте час очікування до 2 секунд. Якщо сервер не відповість, Future має завершитися з помилкою.
-   *Підказка: \`.orTimeout(2, TimeUnit.SECONDS)\`*
-2. **Fallback (План Б):** Якщо сталася будь-яка помилка (timeout, відсутність інтернету, поганий JSON), ми не хочемо, щоб уся програма впала. Замість помилки, нехай повертає "магічне" число \`-999.0\`, що символізуватиме відсутність даних.
-   *Підказка: \`.exceptionally(ex -> { System.out.println("Blad: " + ex.getMessage()); return -999.0; })\`*
+public record TestReport(int passed, int failed, int skipped, List<String> lines) {
+    @Override public String toString();   // усі lines + підсумковий рядок, кожен закінчується \\n
+}
+
+public final class TestRunner {
+    public static TestReport run(Class<?> testClass);
+}
+\`\`\`
+
+* Тестові методи — методи з \`@Test\`, **відсортовані за назвою**. Методи без анотації не викликаються.
+* Для **кожного** тесту створюється **новий** екземпляр класу (як у JUnit), а потім викликаються всі \`@BeforeEach\`-методи.
+* \`@Disabled\` → рядок \`- name (вимкнено)\`, метод не викликається.
+* Успіх → \`✓ name\`. Підсумок: \`Пройдено: P, провалено: F, пропущено: S\`.
+* Методи можуть бути package-private: використовуйте \`setAccessible(true)\`.
+* \`Assert.equal\` порівнює через \`Objects.equals\`.
+
+> [!TIP]
+> Поміркуйте, чому JUnit створює новий екземпляр для кожного тесту. Якби екземпляр був один, \`addsElement\` залишив би в \`data\` чотири елементи, і результат \`freshDataEachTime\` залежав би від порядку тестів.
 `
     },
     {
-      title: "Task 5: Оркестрація в Main (1 бал)",
+      title: "Етап 2: Помилки та очікувані винятки (2 б.)",
       content: `
-Тепер перевіримо різницю у продуктивності! 
-У класі \`Main\` ми маємо список координат для 5 міст.
+Розширте \`TestRunner\`:
+
+| Ситуація | Рядок звіту |
+| --- | --- |
+| \`AssertionError\` | \`✗ name: <повідомлення>\` |
+| інший виняток, не очікуваний | \`✗ name: <SimpleName>: <повідомлення>\` |
+| \`expected = X\`, кинуто X або його підклас | \`✓ name\` |
+| \`expected = X\`, нічого не кинуто | \`✗ name: очікувався <X.SimpleName>\` |
+| \`expected = X\`, кинуто інший виняток | \`✗ name: очікувався X, отримано <SimpleName>\` |
+
+* Не забудьте розгорнути \`InvocationTargetException\` → \`getCause()\`.
+* Виняток у \`@BeforeEach\` → тест провалений, рядок \`✗ name: помилка в @BeforeEach: ...\`.
+* «Підклас» перевіряйте через \`expected.isInstance(cause)\`.
+`
+    },
+    {
+      title: "Етап 3: Серіалізатор JSON на рефлексії (2 б.)",
+      content: `
+Анотації \`@JsonName(String value)\` і \`@JsonIgnore\`: \`RUNTIME\`, \`@Target(ElementType.RECORD_COMPONENT)\`.
 
 \`\`\`java
-record City(String name, double lat, double lon) {}
-
-public class Main {
-    public static void main(String[] args) {
-        List<City> cities = List.of(
-            new City("Kijow", 50.45, 30.52),
-            new City("Londyn", 51.50, -0.12),
-            new City("Nowy Jork", 40.71, -74.00),
-            new City("Tokio", 35.68, 139.69),
-            new City("Sydney", -33.86, 151.20)
-        );
-        
-        WeatherClient client = new WeatherClient();
-        
-        System.out.println("--- SYNCHRONICZNIE ---");
-        long startSync = System.currentTimeMillis();
-        // TODO: W zwykłej pętli wywołaj client.fetchTemperatureSync dla każdego miasta i wypisz wynik.
-        long endSync = System.currentTimeMillis();
-        System.out.println("Czas synchroniczny: " + (endSync - startSync) + " ms\\n");
-        
-        
-        System.out.println("--- ASYNCHRONICZNIE ---");
-        long startAsync = System.currentTimeMillis();
-        
-        // TODO 1: Stwórz listę CompletableFuture. 
-        // Przeiteruj przez miasta i dla każdego wywołaj client.fetchTemperatureAsync, 
-        // dodając wynikowy obiekt Future do listy.
-        
-        // TODO 2: Użyj CompletableFuture.allOf(), przekazując tablicę twoich futures.
-        // Wywołaj na nim .join(), co sprawi, że główny wątek (Main) poczeka, 
-        // aż WSZYSTKIE 5 asynchronicznych zapytań się zakończy.
-        
-        // TODO 3: Przeiteruj ponownie, wyciągając wyniki używając future.get() lub future.join() 
-        // i wypisz je na ekran.
-        
-        long endAsync = System.currentTimeMillis();
-        System.out.println("Czas asynchroniczny: " + (endAsync - startAsync) + " ms");
-    }
+public final class Json {
+    public static String write(Object value);
 }
 \`\`\`
+
+Підтримувані значення:
+
+| Тип | JSON |
+| --- | --- |
+| \`null\` | \`null\` |
+| \`String\`, \`Character\` | рядок у лапках; \`"\` → \`\\"\`, \`\\\` → \`\\\\\`, перенос рядка → \`\\n\` |
+| \`Number\`, \`Boolean\` | як є (\`String.valueOf\`) |
+| \`Collection\`, масив об'єктів | \`[a,b,c]\` |
+| \`Map<String, ?>\` | \`{"k":v}\` |
+| **record** | об'єкт; поля в порядку компонентів; \`@JsonName\` змінює ключ; \`@JsonIgnore\` пропускає поле |
+| будь-що інше | \`IllegalArgumentException("непідтримуваний тип: " + повна назва класу)\` |
+
+* Без пробілів між елементами (компактний формат).
+* Рекурсія для вкладених records і колекцій.
+
+> [!NOTE]
+> Анотація на компоненті record «розповсюджується» на поле, аксесор і параметр конструктора лише тоді, коли її \`@Target\` це дозволяє. З \`@Target(RECORD_COMPONENT)\` її видно саме через \`RecordComponent.getAnnotation\`. Так працюють анотації Jackson на records.
+`
+    },
+    {
+      title: "Етап 4: Реєстр плагінів (2 б.)",
+      content: `
+\`\`\`java
+public interface Plugin {
+    String name();
+    String apply(String input);
+}
+
+@Retention(RetentionPolicy.RUNTIME) @Target(ElementType.TYPE)
+public @interface PluginInfo { String version(); }
+
+public final class PluginRegistry {
+    public static PluginRegistry load(List<String> classNames);
+    public List<Plugin> plugins();               // відсортовані за name()
+    public List<String> errors();                // у порядку вхідного списку
+    public String version(Plugin p);             // з @PluginInfo або "?"
+    public UnaryOperator<String> pipeline(String... names);   // композиція в заданому порядку
+}
+\`\`\`
+
+Для кожної назви:
+
+1. \`Class.forName(name)\`. \`ClassNotFoundException\` → помилка \`"<name>: клас не знайдено"\`.
+2. \`Plugin.class.isAssignableFrom(c)\`, інакше → \`"<SimpleName>: не реалізує Plugin"\`.
+3. Публічний конструктор без параметрів (\`c.getConstructor()\`), інакше → \`"<SimpleName>: немає публічного конструктора без параметрів"\`.
+4. Створити екземпляр і зареєструвати його.
+
+* \`pipeline\` для невідомої назви → \`IllegalArgumentException\`. Композицію будуйте через \`Function.andThen\`, а не циклом під час кожного виклику.
+
+> [!TIP]
+> Без балів: завантажте плагін з окремого JAR через \`URLClassLoader\` або \`ServiceLoader\` (файл \`META-INF/services/pl.mini.reflect.plugins.Plugin\`), як описано на сторінці «Модулі й завантажувачі класів».
+`
+    },
+    {
+      title: "Етап 5: Динамічні проксі (2 б.)",
+      content: `
+\`\`\`java
+@Retention(RetentionPolicy.RUNTIME) @Target(ElementType.METHOD)
+public @interface Cacheable { }
+
+public final class Proxies {
+    public static <T> T logging(T target, Class<T> iface, List<String> log);
+    public static <T> T cached(T target, Class<T> iface);
+}
+\`\`\`
+
+### logging
+
+Після кожного виклику методу інтерфейсу додає до \`log\` рядок:
+
+* успіх: \`name(arg1, arg2) -> result\` (аргументи через \`String.valueOf\`, без аргументів — \`name()\`);
+* виняток: \`name(args) !! SimpleName\`, після чого **той самий** виняток прокидається далі (а не \`InvocationTargetException\` чи \`UndeclaredThrowableException\`).
+
+### cached
+
+Для методів з \`@Cacheable\` запам'ятовує результат за списком аргументів (\`Arrays.asList(args)\` як ключ \`HashMap\`) і повторно не викликає цільовий об'єкт. Інші методи передаються без змін. Винятки не кешуються.
+
+* Методи класу \`Object\` (\`toString\`, \`hashCode\`, \`equals\`) не логуйте і не кешуйте: просто передавайте \`target\`.
 
 > [!IMPORTANT]
-> Порівняйте час! Синхронний код виконується $T_1 + T_2 + T_3...$
-> Асинхронний код виконується за час найповільнішого з 5 запитів: $max(T_1, T_2, T_3...)$.
-> Різниця має бути колосальною. Це і є основа швидких мікросервісів!
+> Саме так працюють \`@Transactional\` і \`@Cacheable\` у Spring. Звідси й відома пастка: якщо метод об'єкта викликає інший свій метод через \`this.other()\`, виклик іде **повз проксі**, і анотація не спрацьовує.
+
+Закомітьте, позначте тегом \`lab07\` і запуште.
 `
     }
   ],
   quiz: [
     {
-      question: "Z jakiego powodu w asynchronicznym łańcuchu (Pipeline) używamy metody .thenApply() zamiast zwykłego przypisania wartości w kodzie liniowym?",
+      question: "Чому TestRunner не побачить анотацію @Test, оголошену без @Retention?",
       options: [
-        "Ponieważ .thenApply() wykonuje operację natychmiastowo na wątku głównym, oszczędzając czas procesora.",
-        "Metoda .thenApply() instruuje CompletableFuture, aby po pomyślnym otrzymaniu wyniku z poprzedniego kroku (np. odebraniu HTTP), automatycznie odpalić przekazaną funkcję (np. transformację JSON) na wyniku, nie blokując wątku w międzyczasie.",
-        "Ponieważ jest to wymóg biblioteki Jackson do poprawnego parsowania.",
-        "Nie ma różnicy. Można użyć int wynik = future.get() od razu po zapytaniu i osiągnąć ten sam asynchroniczny efekt."
+        "Бо за замовчуванням Retention — SOURCE",
+        "Бо за замовчуванням Retention — CLASS: анотація є в байт-коді, але недоступна рефлексії під час виконання",
+        "Бо анотації на методах взагалі невидимі",
+        "Побачить"
       ],
       answer: 1,
-      explanation: "Użycie future.get() natychmiastowo zablokowałoby aktualny wątek w oczekiwaniu na wynik. .thenApply() to 'callback' (oddzwonienie) – rejestrujemy tylko instrukcję: 'gdy dane w końcu przyjdą, zrób z nimi to i to'."
+      explanation: "Для читання через getAnnotation потрібен RetentionPolicy.RUNTIME."
     },
     {
-      question: "Co daje wywołanie CompletableFuture.allOf(future1, future2).join() w metodzie main()?",
+      question: "Що повертає getCause() для InvocationTargetException з Method.invoke?",
       options: [
-        "Skleja wyniki wszystkich future'ów w jeden wielki String.",
-        "Uruchamia wszystkie zapytania jednocześnie (bez tego metody by się nie wykonały).",
-        "Sprawia, że główny wątek (main) zostaje zablokowany (wstrzymany) do momentu, w którym wszystkie przekazane jako argumenty zadania (future) ostatecznie się zakończą (sukcesem lub błędem).",
-        "Anuluje wszystkie trwające zapytania, zwalniając pamięć RAM."
-      ],
-      answer: 2,
-      explanation: "Metody asynchroniczne odpalają się w tle (w domyślnej puli ForkJoinPool). Gdybyśmy nie użyli allOf().join() na końcu metody main(), program po prostu by się zakończył ułamek sekundy po starcie, zabijając wszystkie niedokończone zapytania w tle."
-    },
-    {
-      question: "Co stanie się, jeśli w bloku .thenApply() zostanie rzucony nieobsłużony wyjątek (np. NullPointerException), a na końcu łańcucha dopięta jest metoda .exceptionally(ex -> -1.0)?",
-      options: [
-        "Program natychmiast zakończy działanie z błędem w konsoli (Crash).",
-        "Metoda exceptionally() 'przechwyci' ten błąd, naprawi go ukrywając przed użytkownikiem i sprawi, że Future zakończy się poprawnie, zwracając wartość -1.0.",
-        "Kompilator Java nie pozwoli na kompilację kodu z potencjalnym NullPointerException w asynchronicznym ciele.",
-        "Future zawiśnie w nieskończoność czekając na rozwiązanie problemu."
+        "null",
+        "Справжній виняток, кинутий викликаним методом",
+        "IllegalAccessException",
+        "Той самий InvocationTargetException"
       ],
       answer: 1,
-      explanation: ".exceptionally() działa dokładnie tak samo jak blok 'catch' w standardowym kodzie. Pozwala to na elegancką obsługę błędów w łańcuchach wywołań i dostarczenie wartości domyślnej (Fallback)."
+      explanation: "Рефлексія загортає виняток методу, щоб відрізнити його від помилок самої рефлексії (неправильні аргументи, немає доступу)."
     },
     {
-      question: "Dlaczego wykorzystanie java.net.http.HttpClient do strzelania do REST API jest dzisiaj preferowane w Core Javie, w porównaniu do starego HttpURLConnection?",
+      question: "Чому cached(logging(real)) не записує в лог повторний виклик price(\"tea\")?",
       options: [
-        "Nowy HttpClient natywnie wspiera protokół HTTP/2 oraz wbudowaną, nowoczesną obsługę asynchroniczności (CompletableFuture), czego stare API w ogóle nie potrafiło.",
-        "HttpURLConnection zostało całkowicie usunięte z języka Java i rzuca ClassNotFoundException.",
-        "Nowy HttpClient nie wymaga w ogóle używania try-catch przy operacjach wejścia/wyjścia.",
-        "Stare API pozwalało na wysyłanie tylko metody GET, a nowe wspiera POST i PUT."
+        "Лог переповнений",
+        "Зовнішній проксі кешування повертає збережений результат і взагалі не викликає внутрішній проксі логування",
+        "Логування вимикається для double",
+        "Через помилку в Proxy"
       ],
-      answer: 0,
-      explanation: "Wprowadzony w Javie 11 HttpClient został zaprojektowany całkowicie od nowa. Jego główną przewagą jest obsługa protokołu HTTP/2 i zintegrowanie z modelem asynchronicznym, co idealnie sprawdza się w wysoce obciążonych serwerach."
+      answer: 1,
+      explanation: "Проксі нашаровуються, як декоратори: порядок обгортання визначає поведінку."
+    },
+    {
+      question: "Як перевірити, що клас c реалізує інтерфейс Plugin?",
+      options: [
+        "c instanceof Plugin",
+        "Plugin.class.isAssignableFrom(c)",
+        "c.getName().contains(\"Plugin\")",
+        "c.isInterface()"
+      ],
+      answer: 1,
+      explanation: "instanceof працює з об'єктами, а не з Class. isAssignableFrom відповідає на питання, чи можна присвоїти екземпляр c змінній типу Plugin."
     }
   ]
 };

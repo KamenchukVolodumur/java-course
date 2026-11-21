@@ -1,0 +1,21 @@
+{
+  "messages": {
+    "dims": { "ua": "розміри мають бути додатними: ", "en": "dimensions must be positive: " },
+    "index20": { "ua": "індекс (2, 0) поза матрицею 2x3", "en": "index (2, 0) is outside the 2x3 matrix" },
+    "identity23": { "ua": "identity: матриця 2x3 не квадратна", "en": "identity: the 2x3 matrix is not square" }
+  },
+  "readme": {
+    "title": { "ua": "Лабораторна 03: Бібліотека матриць", "en": "Lab 03: A Matrix Library" },
+    "files": [
+      { "names": ["Main.java"], "status": "main" },
+      { "names": ["Matrix", "DenseMatrix", "SparseMatrix", "MatrixAlgorithms"], "status": "yours" },
+      { "names": ["src/test/java/..."], "status": "tests" }
+    ],
+    "mains": ["pl.mini.matrix.Main"],
+    "stages": ["stage1", "stage2", "stage3", "stage4"],
+    "notes": {
+      "ua": "> Заготовки містять сигнатури, які вимагає завдання. `toString`, `equals` і `hashCode` у `Matrix` треба перевизначити самостійно (етапи 1 і 2).",
+      "en": "> The stubs contain the signatures the task requires. Override `toString`, `equals` and `hashCode` in `Matrix` yourself (stages 1 and 2)."
+    }
+  }
+}

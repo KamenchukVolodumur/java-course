@@ -1,0 +1,62 @@
+package pl.mini.bank.config;
+
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+
+import java.util.HashMap;
+import java.util.Map;
+
+import static org.assertj.core.api.Assertions.*;
+
+@Tag("stage1")
+class AppConfigTest {
+
+    private static Map<String, String> required() {
+        return new HashMap<>(Map.of("DB_URL", "jdbc:postgresql://db:5432/bank", "DB_USER", "bank", "DB_PASSWORD", "s3cret"));
+    }
+
+    @Test
+    void readsRequiredVariablesAndDefaults() {
+        AppConfig c = AppConfig.fromEnv(required());
+        assertThat(c.dbUrl()).isEqualTo("jdbc:postgresql://db:5432/bank");
+        assertThat(c.dbUser()).isEqualTo("bank");
+        assertThat(c.dbPassword()).isEqualTo("s3cret");
+        assertThat(c.httpPort()).isEqualTo(8080);
+        assertThat(c.poolSize()).isEqualTo(10);
+    }
+
+    @Test
+    void optionalVariablesOverrideDefaults() {
+        Map<String, String> env = required();
+        env.put("HTTP_PORT", "9090");
+        env.put("DB_POOL_SIZE", "3");
+        AppConfig c = AppConfig.fromEnv(env);
+        assertThat(c.httpPort()).isEqualTo(9090);
+        assertThat(c.poolSize()).isEqualTo(3);
+    }
+
+    @Test
+    void allMissingVariablesAreReportedAtOnce() {
+        assertThatThrownBy(() -> AppConfig.fromEnv(Map.of("DB_USER", "bank")))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageStartingWith("{{missing}}")
+                .hasMessageContaining("DB_URL")
+                .hasMessageContaining("DB_PASSWORD")
+                .hasMessageNotContaining("DB_USER");
+    }
+
+    @Test
+    void invalidNumberIsReportedTogetherWithMissingVariables() {
+        Map<String, String> env = new HashMap<>(Map.of("DB_URL", "x", "DB_USER", "u", "HTTP_PORT", "abc"));
+        assertThatThrownBy(() -> AppConfig.fromEnv(env))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("DB_PASSWORD")
+                .hasMessageContaining("HTTP_PORT");
+    }
+
+    @Test
+    void toStringHidesThePassword() {
+        String s = AppConfig.fromEnv(required()).toString();
+        assertThat(s).contains("dbPassword=***").doesNotContain("s3cret").contains("bank");
+    }
+}

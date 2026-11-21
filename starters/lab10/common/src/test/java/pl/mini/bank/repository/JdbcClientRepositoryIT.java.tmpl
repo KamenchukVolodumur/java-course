@@ -1,0 +1,105 @@
+package pl.mini.bank.repository;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+import pl.mini.bank.db.Database;
+import pl.mini.bank.domain.Client;
+import pl.mini.bank.domain.InsufficientFundsException;
+
+import java.math.BigDecimal;
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.*;
+
+/** The integration test given in the task, plus a few more cases. Runs with ./mvnw verify. */
+class JdbcClientRepositoryIT {
+    private ClientRepository repo;
+
+    @BeforeEach
+    void setUp() {
+        repo = new JdbcClientRepository(Database.h2InMemory("test-" + UUID.randomUUID()));   // a fresh database
+        repo.save(new Client(null, "44051401359", "Jan Kowalski", new BigDecimal("100.00")));
+        repo.save(new Client(null, "02070803628", "Anna Nowak", new BigDecimal("20.00")));
+    }
+
+    // ===== STAGE 2 =====
+
+    @Test
+    @Tag("stage2")
+    void saveReturnsGeneratedIds() {
+        Client c = repo.save(new Client(null, "90090515836", "Ola", BigDecimal.ZERO));
+        assertThat(c.id()).isNotNull();
+        assertThat(repo.findAll()).extracting(Client::pesel)
+                .containsExactly("44051401359", "02070803628", "90090515836");
+    }
+
+    @Test
+    @Tag("stage2")
+    void findByPesel() {
+        assertThat(repo.findByPesel("02070803628")).get().extracting(Client::fullName).isEqualTo("Anna Nowak");
+        assertThat(repo.findByPesel("90090515836")).isEmpty();
+    }
+
+    @Test
+    @Tag("stage2")
+    void sqlInjectionDoesNotWork() {
+        assertThat(repo.findByPesel("' OR '1'='1")).isEmpty();
+    }
+
+    @Test
+    @Tag("stage2")
+    void updateBalance() {
+        assertThat(repo.updateBalance("02070803628", new BigDecimal("55.50"))).isTrue();
+        assertThat(repo.findByPesel("02070803628")).get().extracting(Client::balance).isEqualTo(new BigDecimal("55.50"));
+        assertThat(repo.updateBalance("90090515836", BigDecimal.ONE)).isFalse();
+    }
+
+    @Test
+    @Tag("stage2")
+    void duplicatePeselIsRejected() {
+        assertThatThrownBy(() -> repo.save(new Client(null, "44051401359", "{{someone}}", BigDecimal.ZERO)))
+                .isInstanceOf(DuplicateClientException.class);
+    }
+
+    // ===== STAGE 3 =====
+
+    @Test
+    @Tag("stage3")
+    void transferMovesMoney() {
+        repo.transfer("44051401359", "02070803628", new BigDecimal("30.00"));
+        assertThat(repo.findByPesel("44051401359")).get().extracting(Client::balance).isEqualTo(new BigDecimal("70.00"));
+        assertThat(repo.findByPesel("02070803628")).get().extracting(Client::balance).isEqualTo(new BigDecimal("50.00"));
+    }
+
+    @Test
+    @Tag("stage3")
+    void failedTransferChangesNothing() {
+        assertThatThrownBy(() -> repo.transfer("44051401359", "99999999999", new BigDecimal("30.00")))
+                .isInstanceOf(NoSuchClientException.class);
+        assertThat(repo.findByPesel("44051401359")).get()
+                .extracting(Client::balance).isEqualTo(new BigDecimal("100.00"));   // rollback!
+    }
+
+    @Test
+    @Tag("stage3")
+    void insufficientFunds() {
+        assertThatThrownBy(() -> repo.transfer("02070803628", "44051401359", new BigDecimal("20.01")))
+                .isInstanceOf(InsufficientFundsException.class);
+        assertThat(repo.findByPesel("02070803628")).get().extracting(Client::balance).isEqualTo(new BigDecimal("20.00"));
+    }
+
+    @Test
+    @Tag("stage3")
+    void unknownSenderIsNoSuchClient() {
+        assertThatThrownBy(() -> repo.transfer("99999999999", "44051401359", BigDecimal.ONE))
+                .isInstanceOf(NoSuchClientException.class);
+    }
+
+    @Test
+    @Tag("stage3")
+    void invalidArgumentsAreRejectedBeforeTheDatabase() {
+        assertThatThrownBy(() -> repo.transfer("44051401359", "02070803628", BigDecimal.ZERO)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> repo.transfer("44051401359", "44051401359", BigDecimal.ONE)).isInstanceOf(IllegalArgumentException.class);
+    }
+}

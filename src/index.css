@@ -1,14 +1,135 @@
-/* Global resets and font settings */
-@import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;700&family=Inter:wght@400;500;600;700;800&display=swap');
-
+/* Design tokens — mirror the Hugo Book theme used by csharp.mini.pw.edu.pl */
 :root {
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
-  box-sizing: border-box;
+  color-scheme: light;
+  --body-background: #ffffff;
+  --body-font-color: #000000;
+  --gray-100: #f8f9fa;
+  --gray-200: #e9ecef;
+  --gray-500: #adb5bd;
+  --muted: #6c757d;
+  --color-link: #0055bb;
+  --color-visited-link: #5500bb;
+  --accent-note: #4486dd;
+  --accent-tip: #3bad3b;
+  --accent-important: #8144dd;
+  --accent-warning: #f59e42;
+  --accent-caution: #d84747;
+
+  /* Solarized light (Chroma) */
+  --hl-base: #586e75;
+  --hl-keyword: #859900;
+  --hl-declaration: #859900;
+  --hl-type: #859900;
+  --hl-type-weight: 700;
+  --hl-constant: #cb4b16;
+  --hl-name: #268bd2;
+  --hl-class: #cb4b16;
+  --hl-decorator: #6c71c4;
+  --hl-string: #2aa198;
+  --hl-comment: #93a1a1;
+  --hl-comment-style: italic;
+  --hl-number: #2aa198;
+  --hl-number-weight: 700;
+  --hl-tag: #268bd2;
+  --hl-attr: #b58900;
+  --hl-var: #cb4b16;
+
+  --font-sans: system-ui, "segoe ui", Roboto, Helvetica, Arial, sans-serif, "apple color emoji", "segoe ui emoji";
+  --font-mono: ui-monospace, SFMono-Regular, Consolas, "liberation mono", Menlo, monospace;
+  --menu-width: 16rem;
+  --toc-width: 16rem;
+  --content-max-width: 50rem;
+  --layout-max-width: 90rem;
+  --radius: 0.25rem;
 }
+
+/* Nord-like dark palette + Solarized dark highlighting */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --body-background: #2e3440;
+    --body-font-color: #eceff4;
+    --gray-100: #3b4252;
+    --gray-200: #434c5e;
+    --gray-500: #4c566a;
+    --muted: #a3acbd;
+    --color-link: #81a1c1;
+    --color-visited-link: #b48ead;
+    --accent-note: #88c0d0;
+    --accent-tip: #a3be8c;
+    --accent-important: #b48ead;
+    --accent-warning: #d08770;
+    --accent-caution: #bf616a;
+    --hl-base: #93a1a1;
+    --hl-keyword: #719e07;
+    --hl-declaration: #268bd2;
+    --hl-type: #dc322f;
+    --hl-type-weight: 400;
+    --hl-constant: #cb4b16;
+    --hl-name: #93a1a1;
+    --hl-class: #268bd2;
+    --hl-decorator: #6c71c4;
+    --hl-string: #2aa198;
+    --hl-comment: #586e75;
+    --hl-comment-style: normal;
+    --hl-number: #2aa198;
+    --hl-number-weight: 400;
+    --hl-tag: #268bd2;
+    --hl-attr: #b58900;
+    --hl-var: #cb4b16;
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --body-background: #2e3440;
+  --body-font-color: #eceff4;
+  --gray-100: #3b4252;
+  --gray-200: #434c5e;
+  --gray-500: #4c566a;
+  --muted: #a3acbd;
+  --color-link: #81a1c1;
+  --color-visited-link: #b48ead;
+  --accent-note: #88c0d0;
+  --accent-tip: #a3be8c;
+  --accent-important: #b48ead;
+  --accent-warning: #d08770;
+  --accent-caution: #bf616a;
+  --hl-base: #93a1a1;
+  --hl-keyword: #719e07;
+  --hl-declaration: #268bd2;
+  --hl-type: #dc322f;
+  --hl-type-weight: 400;
+  --hl-constant: #cb4b16;
+  --hl-name: #93a1a1;
+  --hl-class: #268bd2;
+  --hl-decorator: #6c71c4;
+  --hl-string: #2aa198;
+  --hl-comment: #586e75;
+  --hl-comment-style: normal;
+  --hl-number: #2aa198;
+  --hl-number-weight: 400;
+  --hl-tag: #268bd2;
+  --hl-attr: #b58900;
+  --hl-var: #cb4b16;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { font-size: 100%; scroll-behavior: smooth; }
 
 body {
   margin: 0;
-  padding: 0;
-  background-color: var(--bg-primary);
-  color: var(--text-main);
+  min-width: 20rem;
+  font-family: var(--font-sans);
+  font-weight: 400;
+  color: var(--body-font-color);
+  background: var(--body-background);
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
 }
+
+a { color: var(--color-link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+button { font: inherit; color: inherit; }

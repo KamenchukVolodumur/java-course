@@ -1,125 +1,247 @@
 export const lecture15 = {
   id: "15",
-  title: "Wykład 15: Architektura JVM, Odśmiecanie Pamięci (GC) & GraalVM AOT",
-  description: "Zaawansowany przegląd wnętrza Wirtualnej Maszyny Javy: organizacja pamięci heap/non-heap, typy i tuning Garbage Collectorów, Ahead-of-Time compilation (GraalVM Native Image) oraz detale techniczne Virtual Threads.",
+  title: "Лекція 15: Архітектура JVM, збирання сміття та GraalVM",
+  description: "Області пам'яті JVM, життєвий цикл класу, як працюють збирачі сміття (покоління, G1, ZGC, Parallel, Serial), слабкі посилання, параметри запуску й діагностика (jcmd, JFR, дампи купи), а також AOT-компіляція через GraalVM Native Image.",
   sections: [
     {
-      title: "1. Struktura Pamięci JVM (Memory Layout)",
+      title: "1. Області пам'яті JVM",
       content: `
-Pamięć alokowana przez maszynę JVM dzieli się na dwa główne obszary: **Heap (Sterta)** oraz **Non-Heap (Obszary poza stertą)**.
+\`\`\`text
+┌──────────────────────── процес JVM ────────────────────────┐
+│ Heap (спільна, керує GC)          Metaspace (нативна)       │
+│  ├─ Young: Eden + Survivor S0/S1   метадані класів, методів  │
+│  └─ Old (Tenured)                  Code Cache (JIT-код)      │
+│                                                             │
+│ На кожен потік: Java Stack (кадри), PC register,            │
+│                 Native Method Stack                         │
+│ Direct memory (ByteBuffer.allocateDirect, FFM)              │
+└─────────────────────────────────────────────────────────────┘
+\`\`\`
 
-### 1. Pamięć Heap (Sterta):
-Przechowuje wszystkie obiekty i tablice stworzone przez aplikację. Podlega automatycznemu odśmiecaniu przez Garbage Collector. Od czasów Javy 8 sterta dzieli się tradycyjnie na generacje (Generational Heap):
-* **Young Generation (Młoda Generacja)**: Tu trafiają nowo utworzone obiekty. Składa się z:
-  * **Eden Space**: Miejsce pierwszej alokacji.
-  * **Survivor Spaces (S0 / S1)**: Obszary przejściowe, w których obiekty są kopiowane i "starzeją się" (aging) podczas szybkich cykli odśmiecania (Minor GC).
-* **Old Generation (Tenured Generation)**: Przechowuje długożyjące obiekty przeniesione z generacji młodej po przeżyciu określonej liczby cykli odśmiecania. Odśmiecana rzadziej (Major / Full GC).
+| Область | Що зберігає | Помилка при вичерпанні |
+| --- | --- | --- |
+| Heap | об'єкти й масиви | \`OutOfMemoryError: Java heap space\` |
+| Stack | кадри викликів, локальні змінні | \`StackOverflowError\` (глибока рекурсія) |
+| Metaspace | класи (з Java 8 замість PermGen) | \`OutOfMemoryError: Metaspace\` |
+| Code Cache | скомпільований JIT-код | JIT вимикається, програма сповільнюється |
+| Direct | буфери поза купою | \`OutOfMemoryError: Direct buffer memory\` |
 
-### 2. Pamięć Non-Heap:
-Obszary pamięci nieregulowane przez standardowy stertowy GC:
-* **Metaspace (od Java 8)**: Przechowuje metadane klas, metody i tabele symboli (zastąpił stary obszar *PermGen*, alokowany bezpośrednio z pamięci natywnej RAM).
-* **Thread Stacks (Stosy Wątków)**: Każdy wątek fizyczny otrzymuje własny stos przeznaczony na ramki metod i zmienne lokalne (typy proste i referencje).
-* **Code Cache**: Miejsce, w którym kompilator JIT przechowuje skompilowany kod natywny maszynowy.
+### Як виглядає об'єкт у пам'яті
+
+Кожен об'єкт має **заголовок** (mark word: хеш, стан блокування, вік для GC; плюс вказівник на клас) — 12–16 байтів на 64-бітній JVM, з вирівнюванням до 8 байтів. Тому \`Integer\` займає ~16 байтів проти 4 у \`int\`, а \`List<Integer>\` з мільйона елементів — ~20 МБ проти 4 МБ у \`int[]\`. (Java 25 зменшує заголовок до 8 байтів: Compact Object Headers.)
+
+### Життєвий цикл класу
+
+1. **Loading** — ClassLoader читає байт-код.
+2. **Linking**: *verification* (перевірка байт-коду), *preparation* (статичні поля отримують значення за замовчуванням), *resolution* (символьні посилання замінюються прямими).
+3. **Initialization** — виконуються \`static\`-блоки й ініціалізатори. Відбувається під час першого активного використання класу.
 `
     },
     {
-      title: "2. Przegląd i Tuning Garbage Collectorów",
+      title: "2. Як GC знаходить сміття",
       content: `
-Wybór odpowiedniego odśmiecania (Garbage Collector - GC) zależy od wymagań aplikacji co do przepustowości (throughput) oraz czasu opóźnień (latency):
+GC не рахує посилань (як Python чи COM). Він шукає **досяжні** об'єкти, починаючи від **коренів** (GC roots):
 
-* **Serial GC (\`-XX:+UseSerialGC\` )**: Używa jednego wątku do odśmiecania. Zatrzymuje całą aplikację (Stop-The-World). Dobry do bardzo małych mikroserwisów o minimalnym zużyciu pamięci RAM.
-* **Parallel GC (\`-XX:+UseParallelGC\` )**: Używa wielu wątków w celu zmaksymalizowania przepustowości procesora. Powoduje pauzy Stop-The-World, ale jest idealny do zadań wsadowych (batch processing).
-* **G1 GC (\`-XX:+UseG1GC\` )**: Domyślny odśmiecacz od Javy 9. Dzieli stertę na małe regiony i odśmieca te o największej liczbie śmieci w pierwszej kolejności. Dąży do zachowania określonego, niskiego czasu pauz (np. max 200ms).
-* **ZGC (\`-XX:+UseZGC\` )**: Nowoczesny odśmiecacz o ultra niskich opóźnieniach (Zero-Pause / Sub-millisecond latency). Wykonuje niemal całą pracę współbieżnie z działaniem aplikacji, nawet na stertach o rozmiarach wielu terabajtów. Od Javy 21 wspiera podział na generacje (z flagą \`-XX:+ZGenerational\`; od Javy 23 tryb generacyjny jest domyślny).
-* **Shenandoah GC (\`-XX:+UseShenandoahGC\` )**: Alternatywa o podobnych celach, rozwijana przez Red Hat i dostępna w OpenJDK od Javy 12, również oferująca niskie pauzy niezależnie od rozmiaru sterty.
+* локальні змінні та параметри в стеках усіх потоків;
+* статичні поля завантажених класів;
+* посилання з JNI і монітори, що використовуються.
 
-### Podstawowe parametry tuningu:
-* \`-Xms<rozmiar>\`: Początkowa wielkość sterty (np. \`-Xms2g\`).
-* \`-Xmx<rozmiar>\`: Maksymalna wielkość sterty (np. \`-Xmx4g\`).
-* \`-XX:MaxGCPauseMillis=<ms>\`: Wskazówka dla G1 GC dotycząca maksymalnego dopuszczalnego czasu pauzy.
+Усе, до чого не можна дійти від коренів, — сміття, навіть якщо об'єкти посилаються одне на одного (цикли не заважають).
+
+### Гіпотеза поколінь
+
+**Більшість об'єктів помирають молодими**: тимчасові рядки, ітератори, DTO запиту. Тому купу ділять на покоління:
+
+1. Нові об'єкти створюються в **Eden** (дуже швидко: просто зсув вказівника, TLAB).
+2. Коли Eden заповнюється, відбувається **Minor GC**: живі об'єкти копіюються в Survivor, а решта Eden очищається повністю. Вартість пропорційна кількості **живих** об'єктів, а не мертвих.
+3. Об'єкт, що пережив кілька збирань (вік ~15), переїжджає в **Old**.
+4. **Major/Full GC** чистить Old. Це дорожче.
+
+Аналогія з .NET: покоління 0/1/2 + LOH. Ідея та сама.
+
+### Stop-the-world
+
+Деякі фази вимагають зупинити всі потоки програми (*safepoint*). Сучасні збирачі роблять більшість роботи **паралельно** з програмою (concurrent), а паузи скорочують до мілісекунд.
 `
     },
     {
-      title: "3. GraalVM i Kompilacja AOT (Ahead-of-Time)",
+      title: "3. Збирачі сміття HotSpot",
       content: `
-Tradycyjnie kod Javy uruchamia się w trybie JIT (Just-In-Time) - proces kompilacji do kodu maszynowego następuje przy każdym uruchomieniu aplikacji po jej \"rozgrzaniu\". Powoduje to powolny start aplikacji (cold start) i wysokie początkowe zużycie pamięci.
+| Збирач | Прапорець | Ідея | Коли |
+| --- | --- | --- | --- |
+| **Serial** | \`-XX:+UseSerialGC\` | один потік, повна зупинка | малі купи, контейнери з 1 CPU |
+| **Parallel** | \`-XX:+UseParallelGC\` | кілька потоків, повна зупинка, максимальна пропускна здатність | пакетна обробка, де паузи не важливі |
+| **G1** (за замовчуванням) | \`-XX:+UseG1GC\` | купа розбита на регіони по 1–32 МБ; спочатку чистить «найсмітніші»; ціль паузи \`-XX:MaxGCPauseMillis=200\` | більшість серверних застосунків |
+| **ZGC** | \`-XX:+UseZGC\` | майже все паралельно з програмою; паузи < 1 мс незалежно від розміру купи; поколіннєвий з Java 21 | великі купи, низька затримка |
+| **Shenandoah** | \`-XX:+UseShenandoahGC\` | паралельне ущільнення | низька затримка (OpenJDK) |
+| **Epsilon** | \`-XX:+UseEpsilonGC\` | нічого не збирає | тести продуктивності, короткоживучі задачі |
 
-**GraalVM** to alternatywne środowisko uruchomieniowe JDK, które oferuje kompilator **Ahead-of-Time (AOT)**. Umożliwia on skompilowanie aplikacji Java bezpośrednio do samodzielnego pliku wykonywalnego (**Native Image**) dla danego systemu operacyjnego (np. plik \`.exe\` na Windowsie lub binarka Linuxa).
+### Пропускна здатність vs затримка vs пам'ять
 
-Porównanie JIT vs AOT (GraalVM):
+Неможливо оптимізувати все одразу. Parallel дає максимальну пропускну здатність, ZGC — мінімальні паузи (ціною CPU і пам'яті), а Serial — мінімальні накладні витрати.
 
-| Cecha | JIT (Standard JVM) | AOT (GraalVM Native Image) |
-| :--- | :--- | :--- |
-| **Czas startu** | Sekundy (rozgrzewanie kompilatora) | Milisekundy (natychmiastowy start) |
-| **Zużycie RAM** | Wysokie (metadane JVM, JIT, kompilator) | Niskie (brak JIT kompilatora i standardowego classloadera — aplikacja zawiera lekki runtime SubstrateVM z własnym GC) |
-| **Rozmiar dystrybucyjny** | Wymaga instalacji JDK/JRE | Samodzielny, mały plik binarny |
-| **Maksymalna wydajność** | Bardzo wysoka (dzięki optymalizacjom profilowanym w runtime) | Nieco niższa w długim horyzoncie czasowym |
-| **Ograniczenia** | Brak | Ograniczenia refleksji (wymaga deklaracji w plikach JSON), dynamicznego ładowania klas |
+### Основні параметри
 
-GraalVM Native Image jest kluczowym elementem nowoczesnych frameworków chmurowych (np. Quarkus, Spring Boot 3 Native, Micronaut) uruchamianych w architekturze Serverless / Kubernetes, gdzie liczy się błyskawiczny start i minimalne zużycie RAM.
+\`\`\`bash
+java -Xms512m -Xmx2g \\                 # початковий і максимальний розмір купи
+     -XX:+UseZGC \\
+     -XX:MaxRAMPercentage=75 \\          # у контейнерах: частка від ліміту пам'яті
+     -Xss512k \\                         # розмір стеку потоку
+     -Xlog:gc*:file=gc.log \\            # журнал GC
+     -XX:+HeapDumpOnOutOfMemoryError \\
+     -jar app.jar
+\`\`\`
+
+> [!TIP]
+> Встановлюйте \`-Xms\` рівним \`-Xmx\` для серверних застосунків: купа не змінюватиме розмір під час роботи. І **не викликайте \`System.gc()\`**: це лише підказка, яка зазвичай погіршує продуктивність.
 `
     },
     {
-      title: "4. Wirtualne Wątki: Szczegóły Implementacji i Blokowanie (Pinning)",
+      title: "4. Типи посилань і витоки пам'яті",
       content: `
-Choć wirtualne wątki (Virtual Threads) drastycznie upraszczają współbieżność I/O, programista musi rozumieć ich fizyczną implementację w celu uniknięcia pułapek wydajnościowych:
+| Посилання | Коли GC може зібрати об'єкт | Застосування |
+| --- | --- | --- |
+| Сильне (звичайне) | ніколи, поки є посилання | усе |
+| \`SoftReference\` | коли пам'яті бракує | кеші, чутливі до пам'яті |
+| \`WeakReference\` | на найближчому збиранні, якщо немає сильних посилань | канонікалізація, метадані |
+| \`PhantomReference\` | після фіналізації; \`get()\` завжди null | очищення ресурсів (\`Cleaner\`) |
 
-### Scheduler i Carrier Threads:
-Wirtualne wątki są mapowane na wątki platformowe (Carrier Threads) przez wewnętrzny scheduler JVM oparty na **\`ForkJoinPool\`**. Kiedy wątek wirtualny wykonuje operację blokującą na poziomie standardowej biblioteki Java (np. \`Socket.read()\`, \`Lock.lock()\`), JVM automatycznie zdejmuje go (yield/unmount) ze stosu wątku Carrier i zapisuje jego ramki stosu na stercie (Heap).
+\`\`\`java
+WeakHashMap<Widget, Metadata> meta = new WeakHashMap<>();   // ключ — слабке посилання
+meta.put(widget, new Metadata());
+widget = null;          // після GC запис зникне з мапи сам
+\`\`\`
 
-### Problem Przyszpilenia (Thread Pinning):
-Zdarzają się sytuacje, w których wirtualny wątek **nie może** zostać odmontowany od wątku nośnego (Carrier Thread). Zjawisko to nazywa się **Thread Pinning (przyszpilenie)**. Kiedy wątek wirtualny jest przyszpilony, jego blokada blokuje fizyczny wątek platformy, niwecząc korzyści wydajnościowe.
+Аналог у C# — \`WeakReference<T>\` і \`ConditionalWeakTable\`.
 
-Przyszpilenie występuje w dwóch przypadkach:
-1. Gdy wątek wirtualny wykonuje kod wewnątrz bloku lub metody **\`synchronized\`**:
-   \`\`\`java
-   // ANTYWZORZEC dla Wątków Wirtualnych:
-   public synchronized void doSomething() {
-       // Operacja blokująca I/O przyszpili wątek wirtualny do wątku Carrier!
-       Thread.sleep(1000); 
-   }
-   // ROZWIĄZANIE: Zamiana synchronized na ReentrantLock!
-   \`\`\`
-2. Gdy wątek wirtualny wywołuje funkcję natywną poprzez **JNI** lub **FFM API**.
+### Типові витоки пам'яті в Java
 
-> [!IMPORTANT]
-> W aplikacjach przeznaczonych do uruchamiania na wątkach wirtualnych (Java 21+), należy bezwzględnie zastąpić synchronizację blokami \`synchronized\` na rzecz klas \`ReentrantLock\`, które nie powodują przyszpilania wątków wirtualnych.
+1. Статичні колекції, що лише ростуть (\`static Map cache\`).
+2. Слухачі подій, від яких не відписалися (лекція 04).
+3. \`ThreadLocal\` без \`remove()\` у пулі потоків.
+4. Внутрішні (не static) класи і лямбди, що тримають зовнішній об'єкт.
+5. Незакриті ресурси: потоки, з'єднання, \`Files.lines\`.
+6. Ключі \`HashMap\` зі зміненим \`hashCode\`: об'єкт «загублений», але досяжний.
+`
+    },
+    {
+      title: "5. Діагностика",
+      content: `
+| Інструмент | Для чого |
+| --- | --- |
+| \`jps\` | список процесів Java |
+| \`jcmd <pid> help\` | універсальна команда |
+| \`jcmd <pid> GC.heap_info\` | стан купи |
+| \`jcmd <pid> Thread.print\` | дамп потоків (взаємоблокування!) |
+| \`jcmd <pid> GC.heap_dump heap.hprof\` | знімок купи → аналіз в Eclipse MAT / VisualVM |
+| \`jstat -gcutil <pid> 1000\` | заповненість поколінь щосекунди |
+| **JFR** (Java Flight Recorder) | профілювання в production з накладними витратами < 2% |
+| JDK Mission Control | перегляд записів JFR |
+| VisualVM, async-profiler | профілювання CPU і алокацій |
+
+\`\`\`bash
+java -XX:StartFlightRecording=duration=60s,filename=rec.jfr -jar app.jar
+jcmd <pid> JFR.start duration=30s filename=now.jfr
+jfr print --events jdk.GarbageCollection rec.jfr
+\`\`\`
+
+### Як шукати витік
+
+1. Подивитися на графік зайнятої пам'яті **після** Full GC. Якщо він постійно росте, це витік.
+2. Зробити два дампи купи з інтервалом.
+3. У MAT: *Dominator Tree* і *Path to GC Roots* показують, **хто тримає** об'єкти.
+`
+    },
+    {
+      title: "6. GraalVM і Native Image (AOT)",
+      content: `
+**GraalVM** — JDK з альтернативним JIT-компілятором (Graal, написаний на Java) і можливістю **ahead-of-time** компіляції в нативний виконуваний файл. Аналог у .NET — Native AOT.
+
+\`\`\`bash
+native-image -jar app.jar app        # результат: ./app без JVM
+./app                                # старт за ~10–50 мс замість ~0.5–2 с
+\`\`\`
+
+### Як це працює
+
+Під час збирання виконується **аналіз досяжності** (closed-world assumption): усе, що може бути викликано, компілюється в машинний код, решта викидається. Статичні ініціалізатори можна виконати ще під час збирання.
+
+| | JVM (JIT) | Native Image (AOT) |
+| --- | --- | --- |
+| Старт | повільний (завантаження класів, розігрів) | миттєвий |
+| Пам'ять | більше | значно менше |
+| Пікова продуктивність | вища (JIT оптимізує за профілем) | трохи нижча |
+| Рефлексія, проксі, динамічне завантаження класів | повністю | лише з конфігурацією |
+| Час збирання | секунди | хвилини |
+
+> [!WARNING]
+> Рефлексію, ресурси та динамічні проксі треба **описати** в \`reflect-config.json\` тощо (допомагає агент \`-agentlib:native-image-agent\`). Фреймворки Quarkus, Micronaut і Spring Boot 3 роблять це автоматично.
+
+Де корисно: CLI-утиліти, serverless (AWS Lambda), мікросервіси, які часто масштабуються. Альтернативи без зміни моделі програмування: **CDS/AppCDS** (кеш класів) і **Project Leyden** (AOT-кеш у Java 24+), які пришвидшують старт звичайної JVM.
 `
     }
   ],
   quiz: [
     {
-      question: "Gdzie w strukturze pamięci JVM (od Java 8) przechowywane są metadane klas?",
+      question: "Що з наведеного НЕ є коренем GC (GC root)?",
       options: [
-        "Eden Space",
-        "Survivor Space",
-        "Metaspace (część pamięci Non-Heap alokowana z pamięci fizycznej RAM)",
-        "Old Generation"
+        "Локальна змінна в стеку активного потоку",
+        "Статичне поле завантаженого класу",
+        "Об'єкт, на який посилається лише інший недосяжний об'єкт",
+        "Монітор, захоплений потоком"
       ],
       answer: 2,
-      explanation: "W Javie 8 usunięto obszar PermGen ze sterty i zastąpiono go obszarem Metaspace, który jest alokowany z natywnej pamięci RAM i rośnie dynamicznie."
+      explanation: "Недосяжні об'єкти, навіть пов'язані циклічними посиланнями, є сміттям. GC шукає досяжність від коренів, а не рахує посилання."
     },
     {
-      question: "Który Garbage Collector oferuje ultra niskie opóźnienia (poniżej milisekundy), działając współbieżnie z wątkami aplikacji?",
+      question: "На чому ґрунтується розділення купи на Young і Old?",
       options: [
-        "Serial GC",
-        "Parallel GC",
-        "ZGC (Z Garbage Collector)",
-        "G1 GC"
+        "На розмірі об'єктів",
+        "На гіпотезі поколінь: більшість об'єктів помирає молодими, тож Young збирають часто й дешево",
+        "На типі об'єктів",
+        "На кількості потоків"
       ],
+      answer: 1,
+      explanation: "Minor GC копіює лише живі об'єкти з Eden. Якщо майже всі об'єкти мертві, збирання дуже швидке."
+    },
+    {
+      question: "Який збирач обрати для купи на 64 ГБ, якщо паузи мають бути до 1 мс?",
+      options: ["Serial", "Parallel", "ZGC", "Epsilon"],
       answer: 2,
-      explanation: "ZGC to nowoczesny odśmiecacz o niskich opóźnieniach. Został zaprojektowany w celu minimalizacji pauz Stop-The-World do wartości poniżej 1ms, bez względu na rozmiar sterty."
+      explanation: "ZGC виконує майже всю роботу паралельно з програмою, і його паузи не залежать від розміру купи."
     },
     {
-      question: "Na czym polega zjawisko przyszpilenia (Thread Pinning) wątku wirtualnego w Javie 21?",
+      question: "Яку помилку спричинить нескінченна рекурсія?",
       options: [
-        "Na zablokowaniu Garbage Collectora przez wątek wirtualny.",
-        "Na trwałym przypisaniu wątku wirtualnego do pamięci Metaspace.",
-        "Sytuacja, w której wirtualny wątek wykonuje kod wewnątrz bloku synchronized (lub kodu natywnego) i blokada I/O powoduje fizyczne zablokowanie wątku nośnego (Carrier Thread), co uniemożliwia schedulerowi przełączenie kontekstu.",
-        "Na automatycznym zamknięciu wątku przez system operacyjny."
+        "OutOfMemoryError: Java heap space",
+        "StackOverflowError",
+        "OutOfMemoryError: Metaspace",
+        "NullPointerException"
       ],
-      answer: 3,
-      explanation: "Przyszpilenie uniemożliwia JVM odmontowanie wątku wirtualnego. Występuje głównie w blokach 'synchronized' wykonujących I/O. Rozwiązaniem jest migracja na ReentrantLock."
+      answer: 1,
+      explanation: "Кожен виклик додає кадр у стек потоку, а розмір стеку обмежений (-Xss)."
+    },
+    {
+      question: "Яке головне обмеження GraalVM Native Image?",
+      options: [
+        "Не підтримує generics",
+        "Припущення закритого світу: рефлексію, проксі й динамічне завантаження класів треба описати під час збирання",
+        "Працює лише на Windows",
+        "Не має збирача сміття"
+      ],
+      answer: 1,
+      explanation: "AOT-компілятор має знати весь код, що може виконатися. Код, до якого звертаються динамічно, без конфігурації буде викинуто."
+    },
+    {
+      question: "Чим WeakHashMap відрізняється від HashMap?",
+      options: [
+        "Вона потокобезпечна",
+        "Ключі тримаються слабкими посиланнями: запис зникає, коли на ключ не лишається сильних посилань",
+        "Вона відсортована",
+        "Вона не допускає null"
+      ],
+      answer: 1,
+      explanation: "Це зручно для метаданих, прив'язаних до чужих об'єктів: мапа не заважає GC їх зібрати."
     }
   ]
 };

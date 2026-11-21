@@ -1,0 +1,219 @@
+package pl.mini.chat;
+
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
+import pl.mini.chat.Message.*;
+import pl.mini.chat.Message.Error;
+
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.io.OutputStreamWriter;
+import java.io.PrintWriter;
+import java.net.Socket;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+
+import static java.nio.charset.StandardCharsets.UTF_8;
+import static org.junit.jupiter.api.Assertions.*;
+
+@Timeout(20)
+class ChatTest {
+
+    // ===== STAGE 1 =====
+
+    @Test
+    @Tag("stage1")
+    void roundTripOfAllMessageTypes() throws ProtocolException {
+        List<Message> samples = List.of(new Join("ann"), new Say("ann", "{{line1}}\n{{line2}} \\ \"{{quotes}}\""),
+                new Leave("ann"), new Info("ok"), new Error("{{no}}"));
+        for (Message m : samples) assertEquals(m, MessageCodec.decode(MessageCodec.encode(m)));
+    }
+
+    @Test
+    @Tag("stage1")
+    void encodedMessageIsOneLineWithType() {
+        String line = MessageCodec.encode(new Say("ann", "a\nb"));
+        assertFalse(line.contains("\n"), line);
+        assertTrue(line.contains("\"type\":\"say\""), line);
+    }
+
+    @Test
+    @Tag("stage1")
+    void decodesEscapedQuotes() throws ProtocolException {
+        assertEquals(new Say("ann", "{{hello}} \"{{everyone}}\""),
+                MessageCodec.decode("{\"type\":\"say\",\"user\":\"ann\",\"text\":\"{{hello}} \\\"{{everyone}}\\\"\"}"));
+    }
+
+    @Test
+    @Tag("stage1")
+    void invalidInputGivesProtocolException() {
+        for (String bad : List.of("{\"type\":\"dance\"}", "not json", "{\"type\":\"join\"}", "{\"type\":\"say\",\"user\":\"a\"}"))
+            assertThrows(ProtocolException.class, () -> MessageCodec.decode(bad), bad);
+    }
+
+    // ===== STAGES 2–5: a real server on a free port =====
+
+    private ChatServer server;
+    private final List<AutoCloseable> toClose = new ArrayList<>();
+
+    private ChatClient client() throws Exception {
+        ChatClient c = new ChatClient("localhost", server.port());
+        toClose.add(c);
+        return c;
+    }
+
+    private ChatClient joined(String name) throws Exception {
+        ChatClient c = client();
+        c.send(new Join(name));
+        assertInstanceOf(Info.class, c.receive());
+        return c;
+    }
+
+    @BeforeEach
+    void startServer(org.junit.jupiter.api.TestInfo info) throws Exception {
+        if (info.getTags().contains("stage1")) return;
+        WeatherProvider fake = city -> CompletableFuture.completedFuture(city.equals("{{city}}") ? 12.5 : Double.NaN);
+        server = new ChatServer(0, fake);
+        server.start();
+    }
+
+    @AfterEach
+    void stopServer() throws Exception {
+        for (AutoCloseable c : toClose) c.close();
+        if (server != null) server.close();
+    }
+
+    @Test
+    @Tag("stage2")
+    void joinIsWelcomed() throws Exception {
+        ChatClient ann = client(), bob = client();
+        ann.send(new Join("ann"));
+        assertEquals(new Info("{{welcome}}".formatted("ann", 1)), ann.receive());
+        bob.send(new Join("bob"));
+        assertEquals(new Info("{{welcome}}".formatted("bob", 2)), bob.receive());
+    }
+
+    @Test
+    @Tag("stage2")
+    void firstMessageMustBeJoin() throws Exception {
+        ChatClient c = client();
+        c.send(new Say("x", "hi"));
+        assertEquals(new Error("{{joinFirst}}"), c.receive());
+    }
+
+    @Test
+    @Tag("stage2")
+    void malformedLineKeepsTheConnection() throws Exception {
+        try (Socket s = new Socket("localhost", server.port());
+             var out = new PrintWriter(new OutputStreamWriter(s.getOutputStream(), UTF_8), true);
+             var in = new BufferedReader(new InputStreamReader(s.getInputStream(), UTF_8))) {
+            out.println(MessageCodec.encode(new Join("raw")));
+            assertInstanceOf(Info.class, MessageCodec.decode(in.readLine()));
+            out.println("this is not json");
+            assertEquals(new Error("{{malformed}}"), MessageCodec.decode(in.readLine()));
+            out.println(MessageCodec.encode(new Leave("raw")));
+        }
+    }
+
+    @Test
+    @Tag("stage3")
+    void sayIsBroadcastToOthersWithServerSideName() throws Exception {
+        ChatClient ann = joined("ann");
+        ChatClient bob = joined("bob");
+        assertEquals(new Info("{{joined}}".formatted("bob")), ann.receive());
+        ann.send(new Say("someone-else", "{{hi}}"));
+        assertEquals(new Say("ann", "{{hi}}"), bob.receive());
+        assertTrue(ann.poll(Duration.ofMillis(300)).isEmpty(), "the sender must not get its own message");
+    }
+
+    @Test
+    @Tag("stage3")
+    void leaveIsAnnouncedExactlyOnce() throws Exception {
+        ChatClient ann = joined("ann");
+        ChatClient bob = joined("bob");
+        ann.receive();                       // bob joined
+        bob.send(new Leave("bob"));
+        bob.close();
+        assertEquals(new Info("{{left}}".formatted("bob")), ann.receive());
+        assertTrue(ann.poll(Duration.ofMillis(300)).isEmpty());
+    }
+
+    @Test
+    @Tag("stage3")
+    void droppedConnectionIsAnnounced() throws Exception {
+        ChatClient ann = joined("ann");
+        ChatClient bob = joined("bob");
+        ann.receive();
+        bob.close();
+        assertEquals(new Info("{{left}}".formatted("bob")), ann.receive());
+    }
+
+    @Test
+    @Tag("stage4")
+    void receiveTimesOut() throws Exception {
+        ChatClient c = client();
+        assertTrue(c.poll(Duration.ofMillis(100)).isEmpty());
+        IllegalStateException e = assertThrows(IllegalStateException.class, c::receive);
+        assertEquals("{{noResponse}}", e.getMessage());
+    }
+
+    @Test
+    @Tag("stage4")
+    void nameMustBeUnique() throws Exception {
+        joined("ann");
+        ChatClient impostor = client();
+        impostor.send(new Join("ann"));
+        assertEquals(new Error("{{nameTaken}}".formatted("ann")), impostor.receive());
+    }
+
+    @Test
+    @Tag("stage4")
+    void onlyOneOfManySimultaneousJoinsWins() throws Exception {
+        int n = 20;
+        CountDownLatch go = new CountDownLatch(1);
+        try (ExecutorService pool = Executors.newFixedThreadPool(n)) {
+            List<Future<Message>> answers = new ArrayList<>();
+            for (int i = 0; i < n; i++) {
+                ChatClient c = client();
+                answers.add(pool.submit(() -> { go.await(); c.send(new Join("same")); return c.receive(); }));
+            }
+            go.countDown();
+            long welcomed = 0;
+            for (Future<Message> f : answers) if (f.get() instanceof Info) welcomed++;
+            assertEquals(1, welcomed);
+        }
+    }
+
+    @Test
+    @Tag("stage5")
+    void weatherIsSentOnlyToTheSender() throws Exception {
+        ChatClient ann = joined("ann");
+        ChatClient bob = joined("bob");
+        ann.receive();
+        bob.send(new Say("bob", "/weather {{city}}"));
+        assertEquals(new Info("{{city}}: 12.5°C"), bob.receive());
+        bob.send(new Say("bob", "/weather {{atlantis}}"));
+        assertEquals(new Error("{{noData}}".formatted("{{atlantis}}")), bob.receive());
+        assertTrue(ann.poll(Duration.ofMillis(300)).isEmpty(), "weather commands are not broadcast");
+    }
+
+    @Test
+    @Tag("stage5")
+    void failingProviderGivesNoData() throws Exception {
+        server.close();
+        server = new ChatServer(0, city -> CompletableFuture.failedFuture(new RuntimeException("down")));
+        server.start();
+        ChatClient c = joined("ann");
+        c.send(new Say("ann", "/weather X"));
+        assertEquals(new Error("{{noData}}".formatted("X")), c.receive());
+    }
+}

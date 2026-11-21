@@ -1,0 +1,53 @@
+package pl.mini.chat;
+
+import pl.mini.chat.Message.*;
+import pl.mini.chat.Message.Error;   // {{errorImport}}
+import java.time.Duration;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+
+public class Main {
+    public static void main(String[] args) throws Exception {
+        // ===== STAGE 1 =====
+        // List<Message> samples = List.of(new Join("ann"), new Say("ann", "{{line1}}\n{{line2}} \\ \"{{quotes}}\""),
+        //         new Leave("ann"), new Info("ok"), new Error("{{no}}"));
+        // boolean same = true;                                 // {{loopNote}}
+        // for (Message m : samples) same &= MessageCodec.decode(MessageCodec.encode(m)).equals(m);
+        // System.out.println(same);
+        // System.out.println(MessageCodec.decode("{\"type\":\"say\",\"user\":\"ann\",\"text\":\"{{hello}} \\\"{{everyone}}\\\"\"}"));
+        // try { MessageCodec.decode("{\"type\":\"dance\"}"); }
+        // catch (ProtocolException e) { System.out.println("OK: ProtocolException"); }
+
+        // ===== STAGE 2–5 =====
+        // WeatherProvider fake = city -> CompletableFuture.completedFuture(
+        //         city.equals("{{city}}") ? 12.5 : Double.NaN);
+        // try (ChatServer server = new ChatServer(0, fake)) {
+        //     server.start();
+        //     try (ChatClient ann = new ChatClient("localhost", server.port());
+        //          ChatClient bob = new ChatClient("localhost", server.port())) {
+        //         // STAGE 2
+        //         ann.send(new Join("ann"));
+        //         System.out.println(ann.receive());
+        //         bob.send(new Join("bob"));
+        //         System.out.println(bob.receive());
+        //         // STAGE 3
+        //         System.out.println(ann.receive());
+        //         ann.send(new Say("ann", "{{hi}}"));
+        //         System.out.println(bob.receive());
+        //         // STAGE 5
+        //         bob.send(new Say("bob", "/weather {{city}}"));
+        //         System.out.println(bob.receive());
+        //         bob.send(new Say("bob", "/weather {{atlantis}}"));
+        //         System.out.println(bob.receive());
+        //         // STAGE 4
+        //         try (ChatClient impostor = new ChatClient("localhost", server.port())) {
+        //             impostor.send(new Join("ann"));
+        //             System.out.println(impostor.receive());
+        //         }
+        //         bob.send(new Leave("bob"));
+        //         System.out.println(ann.receive());
+        //         System.out.println("{{silence}}: " + ann.poll(Duration.ofMillis(300)).isEmpty());
+        //     }
+        // }
+    }
+}

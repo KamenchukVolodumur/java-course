@@ -1,555 +1,328 @@
 export const lab11 = {
   id: "Lab11",
-  title: "Лабораторна 11: Система Замовлень з Патернами Проектування",
-  description: "Побудова повноцінної системи обробки замовлень, яка використовує Builder, Factory, Strategy, Observer та Decorator у зв'язці — як у реальному e-commerce бекенді.",
+  title: "Лабораторна 11: Патерни проєктування — система замовлень",
+  description: "Ядро інтернет-магазину на патернах: незмінне замовлення через Builder, знижки через Strategy і Factory, сповіщення підсистем через Observer з ізоляцією помилок слухачів, додаткові послуги через Decorator і фасад OrderService, який поєднує все в один сценарій.",
   sections: [
     {
-      title: "Опис завдання",
+      title: "Перед початком",
       content: `
 > [!NOTE]
-> **Рекомендовані лекції для цієї лаби:** Лекція 16 (SOLID та Design Patterns — теорія) та Лекція 21 (Design Patterns в практиці — антипатерни, композиція).
+> **Лекції:** 05.1 «Функціональні інтерфейси й лямбди», 05.2 «Події», 14.2 «SOLID і патерни проєктування», 14.3 «Патерни на практиці» · **Час:** 3 год · **Бали:** 10
 
-Ви будуєте ядро системи замовлень для інтернет-магазину. Завдання побудовано як **послідовний рефакторинг**: ви почнете з простого коду "в лоб" і крок за кроком перетворите його на гнучку, розширювану архітектуру за допомогою патернів проектування.
+Наприкінці система вмітиме:
 
-**Кінцева система буде вміти:**
-1. Створювати складні замовлення з багатьма параметрами (Builder).
-2. Автоматично вибирати стратегію нарахування знижки залежно від типу клієнта (Factory + Strategy).
-3. Сповіщувати різні підсистеми (склад, email, аналітику) про нове замовлення без жорсткої прив'язки (Observer).
-4. Додавати нові обгортки до замовлення (подарункове пакування, страхування) без зміни базового класу (Decorator).
+1. Створювати незмінні замовлення з багатьма необов'язковими параметрами (**Builder**).
+2. Обирати найвигіднішу знижку з кількох можливих (**Strategy** + **Factory**).
+3. Сповіщати склад, пошту й аналітику про замовлення, не знаючи про них (**Observer**).
+4. Додавати пакування, страхування й доставку, не змінюючи базового розрахунку (**Decorator**).
+5. Ховати все це за одним методом \`place\` (**Facade**).
+
+\`\`\`text
+src/main/java/pl/mini/shop/
+├── model/      Customer  CustomerType  OrderItem  Order (+ Builder)
+├── discount/   DiscountPolicy  Discount  DiscountFactory  (+ реалізації)
+├── events/     OrderEvents  OrderPlaced  OrderCancelled  Inventory  Analytics
+├── pricing/    Priced  BasePrice  GiftWrap  Insurance  Shipping
+├── OrderService.java  OrderRequest.java  Receipt.java
+└── Main.java   (наданий)
+\`\`\`
+
+### Правила
+
+* Гроші — \`BigDecimal\` з масштабом 2 (\`setScale(2, RoundingMode.HALF_UP)\` після кожного множення).
+* Модель (\`Order\`, \`OrderItem\`) незмінна: жодних сетерів, колекції — \`List.copyOf\`.
+
+> [!CAUTION]
+> Заборонено \`instanceof\` і \`switch\` за типом клієнта поза \`DiscountFactory\`: вибір стратегії має бути в одному місці. Заборонено змінювати \`BasePrice\`, щоб додати нову послугу: лише новий декоратор.
 `
     },
     {
-      title: "Task 1: Builder — Створення замовлення (2 бали)",
+      title: "Швидке повторення теорії",
       content: `
-Замовлення (\`Order\`) має багато полів: список товарів, адресу доставки, спосіб оплати, коментар, промокод, номер телефону. Більшість з них — опціональні.
+| Патерн | Проблема | Рішення в цій лабораторній |
+| --- | --- | --- |
+| Builder | 6+ параметрів, більшість необов'язкові | \`Order.builder()...build()\` з валідацією в \`build()\` |
+| Strategy | алгоритм знижки змінюється | \`DiscountPolicy\` — функціональний інтерфейс |
+| Factory | хто вирішує, які знижки застосувати | \`DiscountFactory.best(order)\` |
+| Observer | замовлення має сповістити N підсистем | \`OrderEvents.subscribe/publish\` |
+| Decorator | послуги додаються в довільних комбінаціях | \`new Shipping(new Insurance(new GiftWrap(base)))\` |
+| Facade | клієнтові не потрібні деталі | \`OrderService.place(request)\` |
 
-### Ваше завдання:
-1. Створіть Record або клас \`OrderItem\`:
+### toBuilder — «with» для незмінних об'єктів
+
 \`\`\`java
-public record OrderItem(String productName, double price, int quantity) {
-    public double total() {
-        return price * quantity;
-    }
+Order changed = order.toBuilder().promoCode("MINUS20").build();   // оригінал не змінюється
+\`\`\`
+
+### Шина подій за типом події
+
+\`\`\`java
+public <E> void subscribe(Class<E> type, Consumer<? super E> listener) {
+    listeners.computeIfAbsent(type, k -> new CopyOnWriteArrayList<>()).add(listener);
 }
 \`\`\`
 
-2. Створіть клас \`Order\` з приватним конструктором та вкладеним класом \`Builder\`:
+### Декоратор
+
 \`\`\`java
-import java.util.List;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.time.LocalDateTime;
-
-public class Order {
-    private final String orderId;
-    private final List<OrderItem> items;
-    private final String deliveryAddress;
-    private final String paymentMethod;
-    private final String customerEmail;
-    private final String comment;          // Opcjonalne
-    private final String promoCode;        // Opcjonalne
-    private final LocalDateTime createdAt;
-
-    private Order(Builder builder) {
-        // TODO: Przepisz pola z buildera
-        // WAŻNE: Użyj Collections.unmodifiableList() na liście itemów (Immutability!)
-        // WAŻNE: Użyj Objects.requireNonNull() na polach wymaganych (orderId, items, customerEmail)
-        this.orderId = null;        // <- zmień na builder.orderId
-        this.items = List.of();     // <- zmień na Collections.unmodifiableList(builder.items)
-        this.deliveryAddress = null;
-        this.paymentMethod = null;
-        this.customerEmail = null;
-        this.comment = null;
-        this.promoCode = null;
-        this.createdAt = LocalDateTime.now();
-    }
-
-    public static Builder builder() { return new Builder(); }
-    
-    // Metoda obliczająca sumę zamówienia
-    public double subtotal() {
-        return items.stream().mapToDouble(OrderItem::total).sum();
-    }
-
-    // TODO: Gettery (orderId(), items(), customerEmail(), itd.)
-
-    public static class Builder {
-        private String orderId;
-        private final List<OrderItem> items = new ArrayList<>();
-        private String deliveryAddress;
-        private String paymentMethod = "KARTA";   // Domyślna wartość
-        private String customerEmail;
-        private String comment;
-        private String promoCode;
-
-        public Builder orderId(String orderId) { 
-            this.orderId = orderId; 
-            return this; 
-        }
-        
-        // TODO: Zaimplementuj metody: deliveryAddress(), paymentMethod(), 
-        //       customerEmail(), comment(), promoCode()
-        //       Każda metoda musi zwracać 'this' (return this)!
-
-        public Builder addItem(String name, double price, int quantity) {
-            this.items.add(new OrderItem(name, price, quantity));
-            return this;
-        }
-
-        public Order build() {
-            // TODO: Walidacja — rzuć IllegalStateException jeśli:
-            //   - orderId jest null/pusty
-            //   - items jest pusta
-            //   - customerEmail jest null/pusty
-            return new Order(this);
-        }
-    }
+public record GiftWrap(Priced inner) implements Priced {
+    public BigDecimal price() { return inner.price().add(FEE); }
+    public String description() { return inner.description() + "\\n+ подарункове пакування " + FEE; }
 }
-\`\`\`
-
-### Перевірка:
-\`\`\`java
-Order order = Order.builder()
-    .orderId("ORD-2024-001")
-    .customerEmail("jan@example.com")
-    .addItem("Laptop", 3999.99, 1)
-    .addItem("Mysz bezprzewodowa", 149.99, 2)
-    .deliveryAddress("ul. Marszałkowska 10, Warszawa")
-    .promoCode("LATO20")
-    .build();
-
-System.out.println("Zamówienie: " + order.orderId());
-System.out.println("Suma: " + order.subtotal()); 
-// Powinno wydrukować: 4299.97 (3999.99 + 149.99*2)
 \`\`\`
 `
     },
     {
-      title: "Task 2: Strategy + Factory — Система знижок (2 бали)",
+      title: "Очікуваний вивід",
       content: `
-Різні типи клієнтів отримують різну знижку:
-* **REGULAR** — без знижки (0%).
-* **PREMIUM** — 10%.
-* **VIP** — 20% + безкоштовна доставка.
-* Якщо є **промокод** "LATO20" — додатково 5%.
+Так має виглядати вивід \`Main\` зі стартового проєкту, коли розкоментовано всі етапи:
 
-### Ваше завдання:
-1. Створіть інтерфейс стратегії:
-\`\`\`java
-@FunctionalInterface
-public interface DiscountStrategy {
-    /**
-     * Oblicza kwotę zniżki dla podanej sumy zamówienia.
-     * @param subtotal suma zamówienia przed zniżką
-     * @return kwota zniżki (nie procent, ale konkretna wartość w złotych!)
-     */
-    double calculateDiscount(double subtotal);
-}
+\`\`\`text
+211.00 3 Optional.empty
+OK: замовлення без товарів
+OK: ціна має бути > 0
+student -> 15.00
+promo:MINUS20 -> 20.00
+bulk -> 2.50
+none -> 0.00
+5 1 [до Ola: замовлення ORD-1 прийнято] 196.00
+[брак товару: Миша (є 1, потрібно 2)]
+0.00
+товари 211.00, знижка student -15.00
++ подарункове пакування 5.00
++ страхування 4.02
++ доставка 0.00
+РАЗОМ 205.02
+=== ORD-0001 / Jan ===
+товари 899.99, знижка vip -135.00
++ подарункове пакування 5.00
++ страхування 15.40
++ доставка 25.00
+РАЗОМ 810.39
+810.39 2 2
 \`\`\`
-
-2. Створіть конкретні стратегії:
+`
+    },
+    {
+      title: "Етап 1: Builder — незмінне замовлення (2 б.)",
+      content: `
 \`\`\`java
-public class RegularDiscount implements DiscountStrategy {
-    public double calculateDiscount(double subtotal) {
-        return 0.0;   // Brak zniżki
-    }
+public enum CustomerType { REGULAR, STUDENT, VIP }
+public record Customer(String name, CustomerType type) { }
+public record OrderItem(String name, BigDecimal price, int qty) {
+    public BigDecimal total();      // price * qty, масштаб 2
 }
 
-public class PremiumDiscount implements DiscountStrategy {
-    public double calculateDiscount(double subtotal) {
-        return subtotal * 0.10;   // 10%
-    }
-}
+public final class Order {
+    public static Builder builder();
+    public Builder toBuilder();     // builder, заповнений поточними значеннями
 
-public class VipDiscount implements DiscountStrategy {
-    public double calculateDiscount(double subtotal) {
-        return subtotal * 0.20;   // 20%
-    }
-}
-\`\`\`
+    public Customer customer();
+    public List<OrderItem> items();          // незмінний список
+    public String shippingAddress();
+    public Optional<String> promoCode();
+    public BigDecimal subtotal();            // сума total() усіх позицій
+    public int itemCount();                  // сума qty
 
-3. Створіть Фабрику:
-\`\`\`java
-public class DiscountFactory {
-    
-    public static DiscountStrategy create(String customerType) {
-        // TODO: Użyj switch expression (Java 17+)
-        // "REGULAR" -> new RegularDiscount()
-        // "PREMIUM" -> new PremiumDiscount()
-        // "VIP"     -> new VipDiscount()
-        // default   -> throw new IllegalArgumentException(...)
-        return null;
-    }
-
-    /**
-     * Tworzy KOMPOZYCJĘ strategii: bazowa zniżka + dodatkowy bonus za promokod.
-     * To jest przykład kompozycji funkcji (Function Composition)!
-     */
-    public static DiscountStrategy createWithPromo(String customerType, String promoCode) {
-        DiscountStrategy base = create(customerType);
-        
-        if ("LATO20".equalsIgnoreCase(promoCode)) {
-            // Kompozycja: bazowa zniżka + dodatkowe 5%
-            return subtotal -> base.calculateDiscount(subtotal) + (subtotal * 0.05);
-        }
-        
-        return base;
+    public static final class Builder {
+        public Builder customer(Customer c);
+        public Builder item(String name, String price, int qty);   // ціна рядком: без похибок double
+        public Builder item(OrderItem item);
+        public Builder clearItems();
+        public Builder shipTo(String address);
+        public Builder promoCode(String code);   // null або порожній -> відсутній
+        public Order build();
     }
 }
 \`\`\`
 
-### Перевірка:
-\`\`\`java
-double subtotal = 1000.0;
+### Валідація
 
-DiscountStrategy regular = DiscountFactory.create("REGULAR");
-System.out.println("Regular: -" + regular.calculateDiscount(subtotal)); // 0.0
-
-DiscountStrategy vip = DiscountFactory.create("VIP");
-System.out.println("VIP: -" + vip.calculateDiscount(subtotal));         // 200.0
-
-DiscountStrategy vipPromo = DiscountFactory.createWithPromo("VIP", "LATO20");
-System.out.println("VIP+Promo: -" + vipPromo.calculateDiscount(subtotal)); // 250.0 (20% + 5%)
-\`\`\`
+| Де | Умова | Виняток |
+| --- | --- | --- |
+| \`item(...)\` | ціна ≤ 0 | \`IllegalArgumentException("ціна має бути > 0")\` |
+| \`item(...)\` | qty ≤ 0 | \`IllegalArgumentException("кількість має бути > 0")\` |
+| \`build()\` | немає клієнта | \`IllegalStateException("немає клієнта")\` |
+| \`build()\` | немає позицій | \`IllegalStateException("замовлення без товарів")\` |
+| \`build()\` | немає адреси | \`IllegalStateException("немає адреси доставки")\` |
 
 > [!TIP]
-> Зверніть увагу на \`createWithPromo\`: ми не створюємо новий клас! Ми використовуємо **лямбду** для композиції двох стратегій. Це надзвичайно елегантне рішення, яке стало можливим завдяки \`@FunctionalInterface\`.
+> Перевірки окремих значень (ціна) робіть одразу в методі builder-а: помилку видно в тому рядку, де її зроблено. Перевірки цілісності (чи є товари) — у \`build()\`, бо порядок викликів довільний.
 `
     },
     {
-      title: "Task 3: Observer — Система сповіщень (2 бали)",
+      title: "Етап 2: Strategy + Factory — знижки (2 б.)",
       content: `
-Коли замовлення оформлене, система повинна:
-1. Відправити email клієнту.
-2. Зменшити кількість товарів на складі.
-3. Записати подію в аналітику.
-4. (В майбутньому) відправити Push-повідомлення.
-
-Якщо ви впишете це все в один метод \`placeOrder()\`, він стане монстром на 200 рядків. Кожна зміна ("додай ще SMS") потребуватиме його редагування.
-
-### Ваше завдання:
-1. Створіть Event і Listener:
 \`\`\`java
-// Подія — Record (незмінний об'єкт)
-public record OrderPlacedEvent(Order order, double finalPrice, LocalDateTime timestamp) {}
+public interface DiscountPolicy {
+    String name();
+    BigDecimal discount(Order order);      // >= 0, масштаб 2
+}
 
-// Інтерфейс слухача (Functional Interface!)
-@FunctionalInterface
-public interface OrderEventListener {
-    void onOrderPlaced(OrderPlacedEvent event);
+public record Discount(String source, BigDecimal amount) { }
+
+public final class DiscountFactory {
+    public static List<DiscountPolicy> applicable(Order order);
+    public static Discount best(Order order);
 }
 \`\`\`
 
-2. Створіть EventBus для замовлень:
-\`\`\`java
-import java.util.List;
-import java.util.concurrent.CopyOnWriteArrayList;
+### Політики
 
-public class OrderEventBus {
-    // CopyOnWriteArrayList — bezпечний для багатопоточності (Thread-safe)
-    private final List<OrderEventListener> listeners = new CopyOnWriteArrayList<>();
+| Назва | Коли застосовується | Знижка |
+| --- | --- | --- |
+| \`student\` | клієнт STUDENT | 10% від subtotal, але не більше 15.00 |
+| \`vip\` | клієнт VIP | 15% від subtotal |
+| \`bulk\` | \`itemCount() >= 5\` | 5% від subtotal |
+| \`promo:WELCOME10\` | промокод WELCOME10 | 10% від subtotal |
+| \`promo:MINUS20\` | промокод MINUS20 | 20.00 фіксовано |
 
-    public void subscribe(OrderEventListener listener) {
-        listeners.add(listener);
-    }
+* \`applicable\` повертає політики в порядку: за типом клієнта → bulk → промокод. Невідомий промокод ігнорується.
+* \`best\` обирає політику з **найбільшою** знижкою (за рівності — першу у списку). Знижка не може перевищувати \`subtotal\`. Якщо політик немає → \`Discount("none", 0.00)\`.
+* Реалізації — лямбди або маленькі класи. Промокоди — у \`Map<String, DiscountPolicy>\`, а не в \`switch\`: новий промокод = новий запис у мапі (OCP).
 
-    public void publish(OrderPlacedEvent event) {
-        for (OrderEventListener listener : listeners) {
-            // TODO: Wywołaj listener.onOrderPlaced(event)
-            // BONUS: Opakuj w try/catch, żeby awaria jednego listenera 
-            //        nie zablokowała pozostałych!
-        }
-    }
-}
-\`\`\`
-
-3. Створіть конкретних слухачів:
-\`\`\`java
-public class EmailNotificationListener implements OrderEventListener {
-    public void onOrderPlaced(OrderPlacedEvent event) {
-        System.out.printf("📧 Email do %s: Zamówienie %s na kwotę %.2f zł potwierdzone!%n",
-            event.order().customerEmail(),
-            event.order().orderId(),
-            event.finalPrice());
-    }
-}
-
-public class InventoryListener implements OrderEventListener {
-    public void onOrderPlaced(OrderPlacedEvent event) {
-        // TODO: Dla każdego itemu w zamówieniu wydrukuj:
-        // "📦 Magazyn: Rezerwuję [quantity]x [productName]"
-    }
-}
-
-public class AnalyticsListener implements OrderEventListener {
-    public void onOrderPlaced(OrderPlacedEvent event) {
-        System.out.printf("📊 Analityka: Nowe zamówienie %s, przychód: %.2f zł, czas: %s%n",
-            event.order().orderId(),
-            event.finalPrice(),
-            event.timestamp());
-    }
-}
-\`\`\`
-
-> [!IMPORTANT]
-> Зверніть увагу на \`try/catch\` у методі \`publish\`. У реальних системах це критично: якщо слухач "Аналітики" впав з помилкою, це **не повинно** завадити відправці email-у або оновленню складу. Кожен слухач працює ізольовано.
+> [!NOTE]
+> Знижки **не сумуються**: обирається одна, найвигідніша. Це бізнес-правило, і воно міститься в одному методі \`best\`. Якщо завтра правило зміниться на «сумувати, але не більше 30%», змінити доведеться лише цей метод.
 `
     },
     {
-      title: "Task 4: Decorator — Додаткові послуги (2 бали)",
+      title: "Етап 3: Observer — події замовлень (2 б.)",
       content: `
-Клієнт може додати до замовлення опціональні послуги:
-* **Подарункове пакування** (+25 zł).
-* **Страхування доставки** (+2% від суми замовлення).
-* **Експрес-доставка** (+49.99 zł).
-
-Замість того, щоб додавати купу \`if\`-ів в клас \`Order\`, ми "обгорнемо" замовлення декораторами.
-
-### Ваше завдання:
-1. Створіть інтерфейс:
 \`\`\`java
-public interface PricedOrder {
-    double totalPrice();
+public record OrderPlaced(String orderId, Order order, BigDecimal total) { }
+public record OrderCancelled(String orderId, BigDecimal total) { }
+
+public class OrderEvents {
+    public <E> void subscribe(Class<E> type, Consumer<? super E> listener);
+    public void publish(Object event);
+    public List<String> errors();              // повідомлення винятків слухачів, у порядку виникнення
+}
+
+public class Inventory {
+    public Inventory(Map<String, Integer> initialStock);
+    public void onPlaced(OrderPlaced e);       // списує залишки; брак -> IllegalStateException
+    public int stock(String product);          // 0 для невідомого товару
+}
+
+public class Analytics {
+    public void onPlaced(OrderPlaced e);       // revenue += total
+    public void onCancelled(OrderCancelled e); // revenue -= total
+    public BigDecimal revenue();               // починається з 0.00
+}
+\`\`\`
+
+* \`publish\` викликає слухачів **точного** класу події в порядку підписки.
+* Виняток одного слухача **не зупиняє** інших: шина перехоплює \`RuntimeException\`, додає \`e.getMessage()\` до \`errors()\` і продовжує.
+* \`Inventory.onPlaced\` спочатку перевіряє **всі** позиції, і лише якщо товару вистачає на все, списує залишки (усе або нічого). Повідомлення: \`"брак товару: <назва> (є X, потрібно Y)"\` для першої позиції, якої бракує.
+
+> [!WARNING]
+> Ізоляція помилок — це компроміс. Замовлення прийнято, лист надіслано, а склад не списав товар: система в неузгодженому стані. У production таку подію відправили б у чергу на повторну обробку або на ручний розгляд (dead-letter queue). Тут ми лише фіксуємо помилку в \`errors()\`.
+`
+    },
+    {
+      title: "Етап 4: Decorator — послуги і доставка (2 б.)",
+      content: `
+\`\`\`java
+public interface Priced {
+    BigDecimal price();
     String description();
 }
+
+public record BasePrice(Order order, Discount discount) implements Priced { }
+public record GiftWrap(Priced inner) implements Priced { }       // +5.00
+public record Insurance(Priced inner) implements Priced { }      // +2% від inner.price(), HALF_UP
+public record Shipping(Priced inner, boolean express) implements Priced { }
 \`\`\`
 
-2. Створіть базову обгортку для \`Order\`:
-\`\`\`java
-public class BasicOrder implements PricedOrder {
-    private final Order order;
-    private final DiscountStrategy discount;
+* \`BasePrice\`: \`subtotal − discount\`. Опис: \`"товари <subtotal>, знижка <source> -<amount>"\`; якщо знижка нульова — лише \`"товари <subtotal>"\`.
+* \`Shipping\`: експрес — завжди 25.00; стандарт — 15.00, але **безкоштовно**, якщо \`inner.price() >= 200.00\`.
+* Кожен декоратор додає до опису **новий рядок** \`"+ <послуга> <сума>"\`: \`подарункове пакування\`, \`страхування\`, \`доставка\`.
 
-    public BasicOrder(Order order, DiscountStrategy discount) {
-        this.order = order;
-        this.discount = discount;
-    }
-
-    public double totalPrice() {
-        double subtotal = order.subtotal();
-        return subtotal - discount.calculateDiscount(subtotal);
-    }
-
-    public String description() {
-        return "Zamówienie " + order.orderId();
-    }
-}
-\`\`\`
-
-3. Створіть декоратори:
-\`\`\`java
-public class GiftWrapDecorator implements PricedOrder {
-    private final PricedOrder wrapped;
-
-    public GiftWrapDecorator(PricedOrder wrapped) { this.wrapped = wrapped; }
-
-    public double totalPrice() {
-        return wrapped.totalPrice() + 25.0;
-    }
-
-    public String description() {
-        return wrapped.description() + " + Pakowanie prezentowe";
-    }
-}
-
-public class InsuranceDecorator implements PricedOrder {
-    private final PricedOrder wrapped;
-
-    public InsuranceDecorator(PricedOrder wrapped) { this.wrapped = wrapped; }
-
-    public double totalPrice() {
-        return wrapped.totalPrice() * 1.02;  // +2%
-    }
-
-    public String description() {
-        return wrapped.description() + " + Ubezpieczenie";
-    }
-}
-
-// TODO: Створіть ExpressDeliveryDecorator (+49.99 zł) за аналогією
-\`\`\`
-
-### Перевірка (Збираємо все разом!):
-\`\`\`java
-// 1. BUILDER — tworzymy zamówienie
-Order order = Order.builder()
-    .orderId("ORD-2024-042")
-    .customerEmail("anna@example.com")
-    .addItem("Monitor 27\\"", 1499.00, 1)
-    .addItem("Kabel HDMI", 39.99, 2)
-    .build();
-
-// 2. FACTORY + STRATEGY — wybieramy zniżkę
-DiscountStrategy discount = DiscountFactory.createWithPromo("PREMIUM", "LATO20");
-
-// 3. DECORATOR — dodajemy usługi
-PricedOrder pricedOrder = new BasicOrder(order, discount);
-pricedOrder = new GiftWrapDecorator(pricedOrder);
-pricedOrder = new InsuranceDecorator(pricedOrder);
-
-System.out.println(pricedOrder.description());
-// Zamówienie ORD-2024-042 + Pakowanie prezentowe + Ubezpieczenie
-
-System.out.printf("Do zapłaty: %.2f zł%n", pricedOrder.totalPrice());
-// Subtotal: 1578.98
-// Po zniżce (15%): 1342.13
-// + Pakowanie: 1367.13
-// + Ubezpieczenie (2%): 1394.47
-
-// 4. OBSERVER — powiadamiamy system
-OrderEventBus eventBus = new OrderEventBus();
-eventBus.subscribe(new EmailNotificationListener());
-eventBus.subscribe(new InventoryListener());
-eventBus.subscribe(new AnalyticsListener());
-
-eventBus.publish(new OrderPlacedEvent(order, pricedOrder.totalPrice(), LocalDateTime.now()));
-\`\`\`
+> [!IMPORTANT]
+> Порядок обгортання змінює результат: страхування рахується від ціни **разом** з пакуванням, а безкоштовна доставка залежить від суми **після** страхування. Тому в \`Main\` порядок саме такий: Base → GiftWrap → Insurance → Shipping.
 `
     },
     {
-      title: "Task 5 (Bonus): OrderService — Фасад (1 бал)",
+      title: "Етап 5: Facade — OrderService (2 б.)",
       content: `
-Зберіть усе в один чистий клас \`OrderService\`, який буде "входом" у систему:
-
 \`\`\`java
+public record OrderRequest(Customer customer, List<OrderItem> items, String address, String promoCode,
+                           boolean giftWrap, boolean insurance, boolean express) { }
+
+public record Receipt(String orderId, String customerName, String details, BigDecimal total) {
+    @Override public String toString();
+    // === ORD-0001 / Jan ===
+    // <details>
+    // РАЗОМ <total>
+    // (кожен рядок закінчується \\n)
+}
+
 public class OrderService {
-    private final OrderEventBus eventBus;
-
-    public OrderService(OrderEventBus eventBus) {
-        this.eventBus = eventBus;
-    }
-
-    public void placeOrder(Order order, String customerType, 
-                           boolean giftWrap, boolean insurance, boolean express) {
-        
-        // 1. Strategy: Wyznacz zniżkę
-        DiscountStrategy discount = DiscountFactory.createWithPromo(
-            customerType, order.promoCode()
-        );
-
-        // 2. Decorator: Bazowa cena + opcjonalne usługi
-        PricedOrder pricedOrder = new BasicOrder(order, discount);
-        if (giftWrap)  pricedOrder = new GiftWrapDecorator(pricedOrder);
-        if (insurance) pricedOrder = new InsuranceDecorator(pricedOrder);
-        if (express)   pricedOrder = new ExpressDeliveryDecorator(pricedOrder);
-
-        // 3. Wydruk podsumowania
-        System.out.println("═══════════════════════════════════════");
-        System.out.println(pricedOrder.description());
-        System.out.printf("Suma przed zniżką: %.2f zł%n", order.subtotal());
-        System.out.printf("Do zapłaty:         %.2f zł%n", pricedOrder.totalPrice());
-        System.out.println("═══════════════════════════════════════");
-
-        // 4. Observer: Publikuj zdarzenie
-        eventBus.publish(new OrderPlacedEvent(
-            order, pricedOrder.totalPrice(), LocalDateTime.now()
-        ));
-    }
+    public OrderService(OrderEvents events);
+    public Receipt place(OrderRequest request);
 }
 \`\`\`
 
-### Фінальний запуск:
-\`\`\`java
-public class Main {
-    public static void main(String[] args) {
-        // Konfiguracja Event Bus
-        OrderEventBus eventBus = new OrderEventBus();
-        eventBus.subscribe(new EmailNotificationListener());
-        eventBus.subscribe(new InventoryListener());
-        eventBus.subscribe(new AnalyticsListener());
+\`place\` — це фасад, що поєднує всі попередні етапи:
 
-        // Serwis
-        OrderService service = new OrderService(eventBus);
-
-        // Złożenie zamówienia
-        Order order = Order.builder()
-            .orderId("ORD-2024-100")
-            .customerEmail("vip.client@company.com")
-            .addItem("MacBook Pro 16\\"", 12999.00, 1)
-            .addItem("Etui skórzane", 299.00, 1)
-            .addItem("Adapter USB-C", 79.00, 3)
-            .deliveryAddress("al. Jerozolimskie 100, Warszawa")
-            .paymentMethod("BLIK")
-            .promoCode("LATO20")
-            .build();
-
-        service.placeOrder(order, "VIP", true, true, false);
-        
-        // Oczekiwane wyjście:
-        // ═══════════════════════════════════════
-        // Zamówienie ORD-2024-100 + Pakowanie prezentowe + Ubezpieczenie
-        // Suma przed zniżką: 13535.00 zł
-        // Do zapłaty:         ~10356.05 zł (po zniżce 25%, +25 pakowanie, +2% ubezpieczenie)
-        // ═══════════════════════════════════════
-        // 📧 Email do vip.client@company.com: Zamówienie ORD-2024-100 ...
-        // 📦 Magazyn: Rezerwuję 1x MacBook Pro 16"
-        // 📦 Magazyn: Rezerwuję 1x Etui skórzane
-        // 📦 Magazyn: Rezerwuję 3x Adapter USB-C
-        // 📊 Analityka: Nowe zamówienie ORD-2024-100 ...
-    }
-}
-\`\`\`
+1. Побудувати \`Order\` через Builder (помилки валідації пропускаються до викликача).
+2. \`DiscountFactory.best(order)\`.
+3. Зібрати ланцюжок декораторів за прапорцями запиту (\`Shipping\` додається **завжди**).
+4. Видати ідентифікатор \`ORD-0001\`, \`ORD-0002\`, … (\`AtomicInteger\` + \`String.format("ORD-%04d", n)\`).
+5. Опублікувати \`OrderPlaced\`.
+6. Повернути \`Receipt\`.
 
 > [!TIP]
-> Порахуйте, скільки класів ви створили. Здається, що багато? Але тепер уявіть: шеф каже "додай знижку для студентів -15%". Вам потрібно створити ОДИН клас \`StudentDiscount\` і додати ОДИН рядок у \`DiscountFactory\`. **Жоден інший файл не потребує змін.** Це і є сила патернів проектування.
+> Фасад не містить бізнес-логіки: він лише **координує**. Якщо в \`place\` з'являються \`if\` щодо знижок чи цін, ця логіка потрапила не в той клас.
+
+Закомітьте, позначте тегом \`lab11\` і запуште.
 `
     }
   ],
   quiz: [
     {
-      question: "Dlaczego w klasie Order konstruktor jest PRYWATNY (private), a jedynym sposobem tworzenia obiektu jest Builder?",
+      question: "Чому ціну в Builder.item передають рядком (\"45.50\"), а не double?",
       options: [
-        "Ponieważ Java nie pozwala na publiczne konstruktory w klasach z wieloma polami.",
-        "Aby wymusić walidację danych przed utworzeniem obiektu (w metodzie build()) oraz zapewnić, że obiekt zawsze jest w poprawnym stanie. Publiczny konstruktor pozwoliłby na tworzenie niepoprawnych zamówień (np. bez produktów).",
-        "Aby klasa Order mogła być dziedziczona przez inne klasy zamówień.",
-        "Jest to wymóg serializacji JSON — biblioteka Jackson wymaga prywatnych konstruktorów."
+        "Так коротше",
+        "new BigDecimal(45.50) з double переносить двійкову похибку; з рядка BigDecimal точний",
+        "BigDecimal не має конструктора з double",
+        "Так вимагає патерн Builder"
       ],
       answer: 1,
-      explanation: "Prywatny konstruktor + Builder to gwarancja, że nie powstanie 'pusty' lub 'niepełny' obiekt Order. Metoda build() sprawdza wymagane pola ZANIM obiekt zostanie utworzony."
+      explanation: "new BigDecimal(0.1) дорівнює 0.1000000000000000055511151231257827... Для грошей використовують рядок або BigDecimal.valueOf."
     },
     {
-      question: "W Task 2 (Strategy) metoda createWithPromo() zwraca LAMBDĘ zamiast nowego obiektu klasy. Dlaczego to jest poprawne?",
+      question: "Яка перевага Map<String, DiscountPolicy> для промокодів над switch?",
       options: [
-        "Ponieważ lambdy działają szybciej niż klasy w JVM.",
-        "Ponieważ DiscountStrategy jest @FunctionalInterface (ma jedną metodę abstrakcyjną), więc lambda jest pełnoprawną implementacją tego interfejsu. Nie trzeba tworzyć nowej klasy dla każdej kombinacji zniżek.",
-        "Ponieważ lambdy pozwalają na wielokrotne dziedziczenie, co jest niemożliwe z klasami.",
-        "Ponieważ lambdy są automatycznie serializowalne do JSON, a klasy nie."
+        "Мапа швидша",
+        "Новий промокод — це новий запис, а наявний код не змінюється (OCP); мапу можна завантажити з конфігурації",
+        "switch не працює з рядками",
+        "Переваги немає"
       ],
       answer: 1,
-      explanation: "Każdy @FunctionalInterface może być zaimplementowany przez lambdę. To umożliwia elegancką kompozycję strategii (bazowa + promo) bez eksplozji małych klas."
+      explanation: "Дані замість коду: реєстр стратегій можна розширювати без перекомпіляції логіки вибору."
     },
     {
-      question: "Dlaczego w EventBus warto opakować wywołanie każdego listenera w try/catch?",
+      question: "Чому результат залежить від порядку new Insurance(new GiftWrap(base)) і new GiftWrap(new Insurance(base))?",
       options: [
-        "Ponieważ bez try/catch Java nie pozwala na użycie pętli for-each.",
-        "Aby zapobiec sytuacji, w której awaria jednego subskrybenta (np. AnalyticsListener rzucił NullPointerException) zablokuje wykonanie pozostałych subskrybentów (np. EmailListener nigdy nie wyśle powiadomienia).",
-        "Ponieważ try/catch automatycznie powtarza wywołanie, jeśli się nie powiodło (retry mechanism).",
-        "Ponieważ CopyOnWriteArrayList wymaga obsługi wyjątków ConcurrentModificationException."
+        "Не залежить",
+        "Кожен декоратор рахує від ціни внутрішнього шару: у першому варіанті страхування нараховується і на пакування",
+        "Через округлення BigDecimal",
+        "Через порядок полів у record"
       ],
       answer: 1,
-      explanation: "W systemach produkcyjnych KAŻDY listener powinien być izolowany. Jeśli analityka padła, klient nadal MUSI dostać email z potwierdzeniem. To fundament niezawodności (Fault Tolerance)."
+      explanation: "Декоратори утворюють конвеєр, і порядок шарів — частина бізнес-правил."
     },
     {
-      question: "Jaką kluczową zaletę daje wzorzec Decorator w porównaniu z dodawaniem parametrów boolean (giftWrap, insurance) bezpośrednio do klasy Order?",
+      question: "Склад кинув виняток в onPlaced. Що має зробити шина подій у цій лабораторній?",
       options: [
-        "Dekoratory są szybsze w działaniu, ponieważ nie alokują dodatkowej pamięci.",
-        "Dekoratory można łączyć w dowolnej kolejności i dowolnych kombinacjach BEZ zmiany klasy Order. Dodanie nowej usługi (np. 'priorytetowa obsługa') to jedna nowa klasa, zero zmian w istniejącym kodzie (Open/Closed Principle).",
-        "Dekoratory pozwalają na dziedziczenie klasy Order, co jest niemożliwe z polami boolean.",
-        "Java nie pozwala na więcej niż 5 pól typu boolean w jednej klasie."
+        "Зупинити розсилку й скасувати замовлення",
+        "Зафіксувати помилку в errors() і продовжити розсилку іншим слухачам",
+        "Ігнорувати виняток без сліду",
+        "Перезапустити застосунок"
       ],
       answer: 1,
-      explanation: "Gdybyśmy dodawali booleany do Order, każda nowa usługa wymagałaby zmiany klasy Order, Buildera i logiki obliczania ceny. Z Dekoratorem dodajemy jedną nową klasę i gotowe — istniejący kod NIE jest ruszany."
-    },
-    {
-      question: "W tej laboratorium użyto 4 wzorców (Builder, Factory+Strategy, Observer, Decorator). Który z nich byłby NAJBARDZIEJ zbędny (over-engineering), gdyby system miał obsługiwać tylko JEDNEGO klienta z JEDNYM typem zniżki, bez żadnych dodatkowych usług?",
-      options: [
-        "Builder — bo nawet z jednym klientem zamówienie nadal ma wiele pól.",
-        "Observer — bo powiadomienia są potrzebne zawsze, niezależnie od liczby klientów.",
-        "Factory + Strategy — bo przy JEDNYM typie zniżki tworzenie Fabryki i interfejsu to niepotrzebna abstrakcja. Wystarczy zwykłe mnożenie w jednej linijce kodu.",
-        "Decorator — bo zawsze warto mieć możliwość dodawania nowych usług w przyszłości."
-      ],
-      answer: 2,
-      explanation: "To klucz do zrozumienia antywzorca Over-engineering! Jeśli jest JEDEN typ zniżki, wystarczy 'price * 0.9'. Fabryka, interfejs i klasy strategii to overkill. Ale gdy pojawi się DRUGI typ — wtedy refaktoryzuj. 'Rule of Three' w akcji!"
+      explanation: "Один зламаний слухач не повинен блокувати інших. Але помилка має лишатися видимою, щоб її можна було обробити."
     }
   ]
 };

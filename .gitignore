@@ -9,6 +9,10 @@ lerna-debug.log*
 
 node_modules
 dist
+# generated from starters/ by scripts/build-starters.mjs
+public/starters
+# local builds of starter projects
+starters/**/target
 dist-ssr
 *.local
 

@@ -1,0 +1,133 @@
+package pl.mini.shop;
+
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+import pl.mini.shop.discount.*;
+import pl.mini.shop.events.*;
+import pl.mini.shop.model.*;
+import pl.mini.shop.pricing.*;
+
+import java.math.BigDecimal;
+import java.util.*;
+
+import static pl.mini.testkit.Console.assertPrints;
+
+/** Runs the same code as the STAGE blocks in Main and compares the output with the task. */
+class MainOutputTest {
+
+    private static Order olaOrder() {
+        return Order.builder().customer(new Customer("Ola", CustomerType.STUDENT))
+                .item("{{keyboard}}", "120.00", 1).item("{{mouse}}", "45.50", 2)
+                .shipTo("{{addr1}}").build();
+    }
+
+    @Test
+    @Tag("stage1")
+    void stage1() {
+        assertPrints("""
+                211.00 3 Optional.empty
+                OK: {{noItems}}
+                OK: {{pricePositive}}
+                """, () -> {
+            Customer ola = new Customer("Ola", CustomerType.STUDENT);
+            Order o = olaOrder();
+            System.out.println(o.subtotal() + " " + o.itemCount() + " " + o.promoCode());
+            try { Order.builder().customer(ola).shipTo("x").build(); }
+            catch (IllegalStateException e) { System.out.println("OK: " + e.getMessage()); }
+            try { Order.builder().item("X", "-1.00", 1); }
+            catch (IllegalArgumentException e) { System.out.println("OK: " + e.getMessage()); }
+        });
+    }
+
+    @Test
+    @Tag("stage2")
+    void stage2() {
+        assertPrints("""
+                student -> 15.00
+                promo:MINUS20 -> 20.00
+                bulk -> 2.50
+                none -> 0.00
+                """, () -> {
+            Order o = olaOrder();
+            Order o2 = o.toBuilder().promoCode("MINUS20").build();
+            Order o3 = Order.builder().customer(new Customer("Jan", CustomerType.REGULAR))
+                    .item("{{cable}}", "9.99", 5).shipTo("x").build();
+            Order o4 = o3.toBuilder().clearItems().item("{{cable}}", "9.99", 1).promoCode("NOSUCH").build();
+            for (Order x : List.of(o, o2, o3, o4)) {
+                Discount d = DiscountFactory.best(x);
+                System.out.println(d.source() + " -> " + d.amount());
+            }
+        });
+    }
+
+    @Test
+    @Tag("stage3")
+    void stage3() {
+        assertPrints("""
+                5 1 [{{mailTo}} Ola: {{mailOrder}} ORD-1 {{mailAccepted}}] 196.00
+                [{{outOfStock}}]
+                0.00
+                """.formatted("{{mouse}}", 1, 2), () -> {
+            Order o = olaOrder();
+            OrderEvents events = new OrderEvents();
+            Inventory inv = new Inventory(Map.of("{{keyboard}}", 5, "{{mouse}}", 1, "{{cable}}", 100));
+            Analytics an = new Analytics();
+            List<String> mails = new ArrayList<>();
+            events.subscribe(OrderPlaced.class, inv::onPlaced);
+            events.subscribe(OrderPlaced.class, e -> mails.add("{{mailTo}} " + e.order().customer().name()
+                    + ": {{mailOrder}} " + e.orderId() + " {{mailAccepted}}"));
+            events.subscribe(OrderPlaced.class, an::onPlaced);
+            events.subscribe(OrderCancelled.class, an::onCancelled);
+            events.publish(new OrderPlaced("ORD-1", o, new BigDecimal("196.00")));
+            System.out.println(inv.stock("{{keyboard}}") + " " + inv.stock("{{mouse}}") + " " + mails + " " + an.revenue());
+            System.out.println(events.errors());
+            events.publish(new OrderCancelled("ORD-1", new BigDecimal("196.00")));
+            System.out.println(an.revenue());
+        });
+    }
+
+    @Test
+    @Tag("stage4")
+    void stage4() {
+        assertPrints("""
+                {{itemsWord}} 211.00, {{discountWord}} student -15.00
+                + {{giftWrap}} 5.00
+                + {{insurance}} 4.02
+                + {{shipping}} 0.00
+                {{total}} 205.02
+                """, () -> {
+            Order o = olaOrder();
+            Priced p = new Shipping(new Insurance(new GiftWrap(new BasePrice(o, DiscountFactory.best(o)))), false);
+            System.out.println(p.description());
+            System.out.println("{{total}} " + p.price());
+        });
+    }
+
+    @Test
+    @Tag("stage5")
+    void stage5() {
+        assertPrints("""
+                === ORD-0001 / Jan ===
+                {{itemsWord}} 899.99, {{discountWord}} vip -135.00
+                + {{giftWrap}} 5.00
+                + {{insurance}} 15.40
+                + {{shipping}} 25.00
+                {{total}} 810.39
+                810.39 1 1
+                """, () -> {
+            OrderEvents events = new OrderEvents();
+            Inventory inv = new Inventory(Map.of());
+            Analytics an = new Analytics();
+            List<String> mails = new ArrayList<>();
+            events.subscribe(OrderPlaced.class, inv::onPlaced);
+            events.subscribe(OrderPlaced.class, e -> mails.add(e.orderId()));
+            events.subscribe(OrderPlaced.class, an::onPlaced);
+            OrderService svc = new OrderService(events);
+            Receipt r = svc.place(new OrderRequest(new Customer("Jan", CustomerType.VIP),
+                    List.of(new OrderItem("Monitor", new BigDecimal("899.99"), 1)),
+                    "{{addr2}}", null, true, true, true));
+            System.out.print(r);
+            System.out.println(an.revenue() + " " + mails.size() + " " + events.errors().size());
+        });
+    }
+}

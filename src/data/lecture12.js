@@ -1,140 +1,232 @@
 export const lecture12 = {
   id: "12",
-  title: "Wykład 12: Pamięć Poza-Stertowa (Off-Heap), Mapowanie Pamięci i Klasa Unsafe",
-  description: "Zarządzanie pamięcią na poziomie zaawansowanym: mapowanie plików (MappedByteBuffer), bezpośrednie operacje na pamięci za pomocą sun.misc.Unsafe oraz nowoczesne API pamięci obcej (Project Panama).",
+  title: "Лекція 12: Пам'ять поза купою, відображення файлів і Foreign Memory API",
+  description: "ByteBuffer: купа і пряма пам'ять, порядок байтів; відображення файлів у пам'ять (MappedByteBuffer) і спільна пам'ять між процесами; історичний sun.misc.Unsafe; сучасний Foreign Function & Memory API (Arena, MemorySegment, MemoryLayout) — аналог unsafe-контексту і Span<T> у C#.",
   sections: [
     {
-      title: "1. Pliki Mapowane w Pamięci (MappedByteBuffer)",
+      title: "1. Навіщо пам'ять поза купою",
       content: `
-Domyślne czytanie plików przez tradycyjne I/O wymaga kopiowania danych z bufora jądra systemu operacyjnego (Kernel Space) do bufora przestrzeni użytkownika JVM (User Space). 
+Усі звичайні об'єкти Java живуть у купі під керуванням GC. Іноді цього недостатньо:
 
-Do pracy z ogromnymi plikami o najwyższej wydajności służy **Mapowanie Pamięci (Memory-Mapped Files)** dostępne w NIO.2 poprzez klasę **\`MappedByteBuffer\`**.
+* **Великі буфери** (гігабайти даних, кеші). GC доводиться їх сканувати й переміщувати, а пам'ять поза купою (off-heap) GC не чіпає.
+* **Взаємодія з ОС і нативним кодом**. Системні виклики та бібліотеки C очікують пам'ять, яка не переміщується.
+* **I/O без зайвого копіювання**. Дані з мережі чи диска потрапляють прямо у буфер.
+* **Спільна пам'ять між процесами** через файли, відображені в пам'ять.
 
-Mechanizm ten mapuje fizyczny plik bezpośrednio do wirtualnej pamięci adresowej procesu. Z punktu widzenia aplikacji, plik wygląda jak gigantyczna tablica w pamięci RAM, a system operacyjny zajmuje się automatycznym doczytywaniem stron pliku z dysku (page fault) w tle i synchronizacją zmian.
-
-Przykład użycia:
+В C# для цього є \`unsafe\`, \`fixed\`, \`stackalloc\`, \`Span<T>\` і \`Marshal.AllocHGlobal\`. У Java вказівників у мові немає, тому все робиться через API: \`ByteBuffer\` (Java 1.4) і **Foreign Function & Memory API** (фінальний у Java 22).
+`
+    },
+    {
+      title: "2. ByteBuffer: heap і direct",
+      content: `
 \`\`\`java
-Path path = Path.of("ogromny_plik.dat");
+ByteBuffer heap = ByteBuffer.allocate(1024);          // byte[] у купі
+ByteBuffer direct = ByteBuffer.allocateDirect(1024);  // нативна пам'ять поза купою
 
-try (FileChannel channel = FileChannel.open(path, StandardOpenOption.READ, StandardOpenOption.WRITE)) {
-    // Mapowanie 10 megabajtów pliku do pamięci
-    MappedByteBuffer buffer = channel.map(FileChannel.MapMode.READ_WRITE, 0, 10 * 1024 * 1024);
-    
-    // Zapis pod konkretną pozycję (niezwykle szybki)
-    buffer.put(100, (byte) 42);
-    
-    // Odczyt z pozycji
-    byte val = buffer.get(100); // 42
-    
-    // Wymuszenie zapisu zmian na dysk
-    buffer.force();
+direct.putInt(42).putDouble(3.14).put((byte) 7);      // відносний запис, position зсувається
+direct.flip();                                        // limit = position, position = 0: режим читання
+int i = direct.getInt();
+double d = direct.getDouble();
+direct.getInt(0);                                     // абсолютне читання, position не змінюється
+direct.clear();                                       // повернутися до запису (дані не стираються)
+\`\`\`
+
+Стан буфера описують три індекси: \`0 <= position <= limit <= capacity\`.
+
+\`\`\`text
+після put(4 байти):   [x x x x . . . .]   position=4, limit=8
+після flip():          [x x x x . . . .]   position=0, limit=4
+\`\`\`
+
+### Порядок байтів
+
+\`\`\`java
+ByteBuffer b = ByteBuffer.allocate(4);
+b.putInt(0x01020304);
+System.out.println(Arrays.toString(b.array()));   // [1, 2, 3, 4]: BIG_ENDIAN за замовчуванням
+b.clear().order(ByteOrder.LITTLE_ENDIAN).putInt(0x01020304);
+System.out.println(Arrays.toString(b.array()));   // [4, 3, 2, 1]: як на x86
+ByteOrder.nativeOrder();
+\`\`\`
+
+> [!WARNING]
+> Пряма пам'ять звільняється, лише коли GC збере сам об'єкт \`ByteBuffer\`, тобто з невизначеною затримкою. Її загальний обсяг обмежує \`-XX:MaxDirectMemorySize\`. Створювати прямий буфер дорого, тому їх перевикористовують.
+`
+    },
+    {
+      title: "3. Файли, відображені в пам'ять (MappedByteBuffer)",
+      content: `
+ОС відображає файл безпосередньо в адресний простір процесу. Читання й запис стають звичайним доступом до пам'яті, а сторінки підвантажує й скидає на диск сама ОС. Аналог \`MemoryMappedFile\` у C#.
+
+\`\`\`java
+Path file = Path.of("data.bin");
+try (FileChannel ch = FileChannel.open(file,
+        StandardOpenOption.CREATE, StandardOpenOption.READ, StandardOpenOption.WRITE)) {
+
+    MappedByteBuffer mm = ch.map(FileChannel.MapMode.READ_WRITE, 0, 1024 * 1024);  // 1 МБ
+    for (int i = 0; i < 1000; i++) {
+        mm.putInt(i * 4, i * i);           // запис "у пам'ять" = запис у файл
+    }
+    mm.force();                            // гарантовано скинути на диск (як fsync)
 }
 \`\`\`
 
-Zalety:
-* Błyskawiczny dostęp do losowych fragmentów pliku.
-* Dane nie podlegają Garbage Collectorowi (ponieważ leżą w pamięci poza stertą JVM - **Off-Heap**).
-* Możliwość współdzielenia pamięci między procesami.
-`
-    },
-    {
-      title: "2. Klasa sun.misc.Unsafe",
-      content: `
-Klasa \`sun.misc.Unsafe\` to wewnętrzne, nieoficjalne API maszyny JVM, które daje programiście Java niskopoziomowe możliwości zbliżone do języków C/C++:
-* Alokacja i zwalnianie pamięci poza stertą (\`allocateMemory()\`, \`freeMemory()\`).
-* Bezpośrednie czytanie/zapisywanie wartości pod adresem pamięci (pointer-like access).
-* Pobieranie fizycznych przesunięć pól (offsets) w strukturze klasy.
-* Operacje atomowe Compare-And-Swap (CAS) używane do budowania struktur lock-free.
+### Спільна пам'ять між процесами
 
-Instancję \`Unsafe\` można pobrać tylko za pomocą refleksji, gdyż bezpośrednie pobranie jest blokowane:
+Якщо два процеси відобразять той самий файл у режимі \`READ_WRITE\`, вони бачитимуть зміни одне одного **без системних викликів**. Це найшвидший механізм IPC.
+
 \`\`\`java
-Field theUnsafeField = Unsafe.class.getDeclaredField("theUnsafe");
-theUnsafeField.setAccessible(true);
-Unsafe unsafe = (Unsafe) theUnsafeField.get(null);
+// процес-записувач
+mm.putLong(8, payload);
+mm.putInt(0, 1);          // прапорець "дані готові" записується ОСТАННІМ
 
-// Ręczna alokacja 4 bajtów pamięci off-heap
-long memoryAddress = unsafe.allocateMemory(4);
-
-// Zapis wartości int bezpośrednio pod adresem
-unsafe.putInt(memoryAddress, 9999);
-
-// Odczyt wartości
-int value = unsafe.getInt(memoryAddress); // 9999
-
-// Ręczne zwolnienie pamięci (brak zwolnienia skutkuje leakem pamięci systemowej!)
-unsafe.freeMemory(memoryAddress);
+// процес-читач
+while (mm.getInt(0) == 0) Thread.onSpinWait();
+long payload = mm.getLong(8);
 \`\`\`
 
 > [!CAUTION]
-> Użycie \`Unsafe\` wyłącza wszelkie zabezpieczenia JVM. Błędy takie jak wyjście poza zaalokowaną pamięć (segmentation fault) powodują natychmiastowe zawieszenie całej wirtualnej maszyny (JVM crash), a brak ręcznego zwalniania alokacji prowadzi do wycieków pamięci systemowej.
+> Звичайний \`ByteBuffer\` не дає гарантій видимості та впорядкування між процесами чи потоками. Для справжньої синхронізації використовують \`VarHandle\` з режимами \`setRelease\`/\`getAcquire\` або FFM API (розділ 5), чи блокування фрагмента файлу \`FileChannel.lock()\`.
 
-> [!WARNING]
-> **Deprecation**: Od JDK 23 metody dostępu do pamięci w \`sun.misc.Unsafe\` są oznaczone jako terminally deprecated. Od JDK 24 generowane są ostrzeżenia w runtime, a od JDK 26 metody te domyślnie wyrzucają wyjątek (wymagana flaga \`--sun-misc-unsafe-memory-access=allow\`). Oficjalnymi zamiennikami są \`VarHandle\` (od JDK 9, dla pamięci na stercie) oraz FFM API (od JDK 22, dla pamięci poza stertą). Na JDK 17+ wymagana jest również flaga \`--add-opens java.base/sun.misc=ALL-UNNAMED\` aby uzyskać refleksyjny dostęp do pola \`theUnsafe\`.
+Обмеження: один \`MappedByteBuffer\` — до 2 ГБ (індекс типу \`int\`). Для більших файлів створюють кілька відображень або використовують \`MemorySegment\` з FFM API, де індекси мають тип \`long\`.
 `
     },
     {
-      title: "3. Nowoczesny Standard: Foreign Function & Memory API (Project Panama)",
+      title: "4. sun.misc.Unsafe — історія",
       content: `
-W celu zastąpienia niebezpiecznej klasy \`Unsafe\` oraz powolnego interfejsu JNI, w nowszych wersjach Javy (ostatecznie stabilne w Java 22+) w ramach projektu **Panama** wprowadzono **Foreign Function & Memory (FFM) API**.
+\`Unsafe\` — внутрішній клас JDK із прямим доступом до пам'яті: \`allocateMemory\`, \`putLong(address, v)\`, \`compareAndSwapInt\` тощо. Роками його використовували бібліотеки, яким була потрібна швидкість: Netty, Kafka, Cassandra.
 
-FFM API umożliwia bezpieczną, wydajną alokację pamięci off-heap oraz wywoływanie funkcji w bibliotekach natywnych (C/C++).
-
-Główne abstrakcje FFM:
-* **\`MemorySegment\`**: Reprezentuje ciągły obszar pamięci (on-heap lub off-heap).
-* **\`Arena\`**: Kontroluje cykl życia i zwalniania segmentów pamięci (np. blokowe zwalnianie przy zamknięciu areny).
-
-Przykład bezpiecznej alokacji off-heap:
 \`\`\`java
-// Użycie areny w bloku try-with-resources automatycznie zwalnia całą pamięć off-heap na końcu!
-try (Arena arena = Arena.ofConfined()) {
-    // Alokacja miejsca na 10 liczb całkowitych int (10 * 4 bajty = 40 bajtów)
-    MemorySegment segment = arena.allocate(40);
-    
-    // Zapisanie wartości
-    for (int i = 0; i < 10; i++) {
-        segment.setAtIndex(ValueLayout.JAVA_INT, i, i * 10);
-    }
-    
-    // Odczytanie wartości
-    int val = segment.getAtIndex(ValueLayout.JAVA_INT, 5); // 50
-} // Pamięć off-heap jest bezpiecznie i automatycznie zwalniana w tym miejscu!
+Field f = Unsafe.class.getDeclaredField("theUnsafe");
+f.setAccessible(true);
+Unsafe U = (Unsafe) f.get(null);
+
+long addr = U.allocateMemory(16);
+U.putLong(addr, 123L);
+long v = U.getLong(addr);
+U.freeMemory(addr);              // забули — витік; викликали двічі — падіння JVM
 \`\`\`
+
+> [!CAUTION]
+> Помилка з \`Unsafe\` — це не виняток, а **падіння всієї JVM** (SIGSEGV). Методи доступу до пам'яті в \`Unsafe\` позначені deprecated for removal (JEP 471, Java 23). Їх заміна — \`VarHandle\` (атомарні операції) і FFM API (пам'ять).
+`
+    },
+    {
+      title: "5. Foreign Function & Memory API: робота з пам'яттю",
+      content: `
+Пакет \`java.lang.foreign\` (фінальний у Java 22) дає **безпечний** доступ до нативної пам'яті: перевірку меж і перевірку часу життя.
+
+### Arena — час життя пам'яті
+
+| Арена | Звільнення | Потоки |
+| --- | --- | --- |
+| \`Arena.ofConfined()\` | \`close()\` (try-with-resources) | лише потік-власник |
+| \`Arena.ofShared()\` | \`close()\` | будь-які потоки |
+| \`Arena.ofAuto()\` | GC | будь-які |
+| \`Arena.global()\` | ніколи | будь-які |
+
+\`\`\`java
+try (Arena arena = Arena.ofConfined()) {
+    MemorySegment seg = arena.allocate(ValueLayout.JAVA_INT, 10);   // int[10] поза купою
+    for (int i = 0; i < 10; i++) {
+        seg.setAtIndex(ValueLayout.JAVA_INT, i, i * i);
+    }
+    int sum = 0;
+    for (int i = 0; i < 10; i++) sum += seg.getAtIndex(ValueLayout.JAVA_INT, i);
+    System.out.println(sum);    // 285
+
+    // seg.getAtIndex(ValueLayout.JAVA_INT, 10);   // IndexOutOfBoundsException, а не segfault
+}   // уся пам'ять арени звільняється тут
+// доступ до seg після close() -> IllegalStateException
+\`\`\`
+
+### Структури: MemoryLayout
+
+\`\`\`java
+// struct Point { int x; int y; };
+StructLayout POINT = MemoryLayout.structLayout(
+        ValueLayout.JAVA_INT.withName("x"),
+        ValueLayout.JAVA_INT.withName("y"));
+VarHandle X = POINT.varHandle(MemoryLayout.PathElement.groupElement("x"));
+VarHandle Y = POINT.varHandle(MemoryLayout.PathElement.groupElement("y"));
+
+try (Arena arena = Arena.ofConfined()) {
+    MemorySegment points = arena.allocate(POINT, 100);       // масив із 100 структур
+    for (long i = 0; i < 100; i++) {
+        MemorySegment p = points.asSlice(i * POINT.byteSize(), POINT);
+        X.set(p, 0L, (int) i);
+        Y.set(p, 0L, (int) (i * 2));
+    }
+}
+\`\`\`
+
+### Відображення великих файлів
+
+\`\`\`java
+try (Arena arena = Arena.ofShared();
+     FileChannel ch = FileChannel.open(path, StandardOpenOption.READ)) {
+    MemorySegment all = ch.map(FileChannel.MapMode.READ_ONLY, 0, ch.size(), arena);  // > 2 ГБ теж
+    long count = 0;
+    for (long off = 0; off < all.byteSize(); off++) {
+        if (all.get(ValueLayout.JAVA_BYTE, off) == '\\n') count++;
+    }
+}
+\`\`\`
+
+Виклики нативних функцій через той самий API (\`Linker\`, аналог P/Invoke) розглянемо в лекції 13.
 `
     }
   ],
   quiz: [
     {
-      question: "Co dzieje się z danymi zapisanymi w pamięci Off-Heap (poza stertą JVM), np. w MappedByteBuffer?",
+      question: "Що робить buffer.flip()?",
       options: [
-        "Są automatycznie czyszczone przez Garbage Collector w krótkich odstępach czasu.",
-        "Nie są widoczne dla Garbage Collectora, co zapobiega pauzom Stop-The-World, ale programista musi dbać o ich poprawne zwalnianie.",
-        "Są szyfrowane przez system operacyjny.",
-        "Zostają usunięte natychmiast po wywołaniu dowolnej metody na obiekcie String."
+        "Змінює порядок байтів",
+        "Встановлює limit = position і position = 0, тобто перемикає буфер із запису на читання",
+        "Очищає дані",
+        "Копіює буфер"
       ],
       answer: 1,
-      explanation: "Pamięć Off-Heap leży poza stertą zarządzaną przez JVM. Dzięki temu nie obciąża ona Garbage Collectora (brak GC pauses), ale wymaga odpowiedzialnego zarządzania alokacjami."
+      explanation: "Після запису position вказує на кінець даних. flip() робить ці дані доступними для читання від початку."
     },
     {
-      question: "Dlaczego bezpośrednie korzystanie z klasy sun.misc.Unsafe jest odradzane?",
+      question: "Яка головна перевага MappedByteBuffer для IPC?",
       options: [
-        "Unsafe działa bardzo wolno.",
-        "Wyłącza ono wszystkie zabezpieczenia JVM (np. brak weryfikacji granic pamięci), co przy najmniejszym błędzie może spowodować awarię i zamknięcie całej maszyny JVM (crash).",
-        "Wycofano ją całkowicie z biblioteki standardowej bez zamiennika w Java 11.",
-        "Wymaga posiadania licencji Oracle."
+        "Він шифрує дані",
+        "Два процеси, які відобразили той самий файл, бачать зміни одне одного без системних викликів на кожну операцію",
+        "Він працює лише в одному процесі",
+        "Він не потребує файлу"
       ],
       answer: 1,
-      explanation: "Klasa Unsafe pozwala na pisanie kodu w stylu C (operacje na wskaźnikach, alokacja malloc/free). Dowolny błąd (np. zapis pod niewłaściwy adres) powoduje awarię procesu (JVM crash) zamiast kontrolowanego wyjątku."
+      explanation: "Сторінки файлу спільні для процесів, тож запис одного процесу одразу видно іншому. Синхронізацію при цьому все одно треба забезпечити окремо."
     },
     {
-      question: "Jaki element z FFM API (Project Panama) kontroluje cykl życia i automatyczne zwalnianie obszarów pamięci off-heap?",
+      question: "Чому FFM API безпечніший за sun.misc.Unsafe?",
       options: [
-        "MemorySegment",
-        "Arena",
-        "Garbage Collector",
-        "Unsafe"
+        "Він повільніший",
+        "Перевіряє межі сегмента і час життя арени: помилка дає виняток, а не падіння JVM",
+        "Він не дозволяє записувати в пам'ять",
+        "Він працює лише з купою"
       ],
       answer: 1,
-      explanation: "Arena zarządza alokacjami pamięci i implementuje interfejs AutoCloseable. Zamknięcie areny automatycznie zwalnia wszystkie powiązane z nią segmenty pamięci off-heap."
+      explanation: "Вихід за межі дає IndexOutOfBoundsException, а доступ після закриття арени — IllegalStateException. Unsafe за таких помилок просто «кладе» процес."
+    },
+    {
+      question: "Коли звільняється пам'ять, виділена в Arena.ofConfined()?",
+      options: [
+        "Коли спрацює GC",
+        "Під час виклику arena.close() (зазвичай наприкінці try-with-resources)",
+        "Ніколи",
+        "Після кожного доступу"
+      ],
+      answer: 1,
+      explanation: "Confined- і shared-арени звільняються детерміновано під час close(). Arena.ofAuto() звільняє пам'ять через GC, а Arena.global() — ніколи."
+    },
+    {
+      question: "Який порядок байтів має ByteBuffer за замовчуванням?",
+      options: ["LITTLE_ENDIAN", "BIG_ENDIAN", "Нативний порядок процесора", "Випадковий"],
+      answer: 1,
+      explanation: "За замовчуванням використовується BIG_ENDIAN (мережевий порядок), незалежно від процесора. Змінити його можна через order(ByteOrder.LITTLE_ENDIAN)."
     }
   ]
 };

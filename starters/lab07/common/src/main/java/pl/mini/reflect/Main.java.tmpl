@@ -1,0 +1,94 @@
+package pl.mini.reflect;
+
+import pl.mini.reflect.testing.*;
+import pl.mini.reflect.json.*;
+import pl.mini.reflect.plugins.*;
+import pl.mini.reflect.proxy.*;
+import java.util.*;
+
+public class Main {
+    // ---------- {{forStage}} 1 ----------
+    public static class BasicTests {
+        private List<Integer> data;
+        @BeforeEach void setUp() { data = new ArrayList<>(List.of(1, 2, 3)); }
+        @Test void addsElement() { data.add(4); Assert.equal(4, data.size()); }
+        @Test void freshDataEachTime() { Assert.equal(3, data.size()); }
+        @Test @Disabled void notReady() { throw new IllegalStateException(); }
+        void helper() { throw new IllegalStateException("{{helperMsg}}"); }
+    }
+
+    // ---------- {{forStage}} 2 ----------
+    public static class TrickyTests {
+        private List<Integer> data = List.of(1, 2, 3);
+        @Test void wrongSum() { Assert.equal(7, data.stream().mapToInt(i -> i).sum()); }
+        @Test(expected = ArithmeticException.class) void dividesByZero() { int x = 1 / (data.size() - 3); }
+        @Test(expected = IllegalStateException.class) void expectedButNotThrown() { }
+        @Test void crashes() { throw new IllegalStateException("{{boom}}"); }
+    }
+
+    // ---------- {{forStage}} 3 ----------
+    public record Address(String city, @JsonName("zip_code") String zip) { }
+    public record Person(String name, int age, @JsonIgnore String password,
+                         Address address, List<String> tags, Double score) { }
+
+    // ---------- {{forStage}} 4 ----------
+    @PluginInfo(version = "1.2")
+    public static class UpperPlugin implements Plugin {
+        public String name() { return "upper"; }
+        public String apply(String s) { return s.toUpperCase(); }
+    }
+    public static class ReversePlugin implements Plugin {
+        public String name() { return "reverse"; }
+        public String apply(String s) { return new StringBuilder(s).reverse().toString(); }
+    }
+    public static class NotAPlugin { }
+    public static class NoDefaultCtor implements Plugin {
+        public NoDefaultCtor(int x) { }
+        public String name() { return "x"; }
+        public String apply(String s) { return s; }
+    }
+
+    // ---------- {{forStage}} 5 ----------
+    public interface PriceService {
+        @Cacheable double price(String product);
+        String hello(String who);
+    }
+    public static class SlowPriceService implements PriceService {
+        int calls;
+        public double price(String product) { calls++; return product.length() * 1.5; }
+        public String hello(String who) { return "Hi " + who; }
+    }
+
+    public static void main(String[] args) {
+        // ===== STAGE 1 =====
+        // System.out.print(TestRunner.run(BasicTests.class));
+
+        // ===== STAGE 2 =====
+        // System.out.print(TestRunner.run(TrickyTests.class));
+
+        // ===== STAGE 3 =====
+        // System.out.println(Json.write(new Person("{{anna}}", 21, "secret",
+        //         new Address("{{warsaw}}", "00-661"), List.of("java", "kotlin"), null)));
+        // System.out.println(Json.write(List.of("say \"hi\"", 1, true)));
+        // try { Json.write(new Object()); }
+        // catch (IllegalArgumentException e) { System.out.println("OK: " + e.getMessage()); }
+
+        // ===== STAGE 4 =====
+        // String p = Main.class.getName() + "$";
+        // PluginRegistry reg = PluginRegistry.load(List.of(p + "UpperPlugin", p + "ReversePlugin",
+        //         p + "NotAPlugin", p + "NoDefaultCtor", "pl.mini.Missing"));
+        // reg.errors().forEach(System.out::println);
+        // reg.plugins().forEach(pl -> System.out.println(pl.name() + " v" + reg.version(pl)));
+        // System.out.println(reg.pipeline("upper", "reverse").apply("Java"));
+
+        // ===== STAGE 5 =====
+        // SlowPriceService real = new SlowPriceService();
+        // List<String> log = new ArrayList<>();
+        // PriceService svc = Proxies.cached(Proxies.logging(real, PriceService.class, log), PriceService.class);
+        // svc.price("tea"); svc.price("tea"); svc.price("coffee");
+        // svc.hello("Ola"); svc.hello("Ola");
+        // System.out.println(real.calls + " " + log);
+        // try { svc.price(null); }
+        // catch (NullPointerException e) { System.out.println("OK: NPE, " + log.get(log.size() - 1)); }
+    }
+}

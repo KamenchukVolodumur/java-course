@@ -1,0 +1,97 @@
+import java.io.*;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.*;
+import java.util.*;
+import java.util.concurrent.TimeUnit;
+
+/**
+ * {{cliTitle}}
+ *
+ *   ./mvnw clean verify
+ *   java CheckCli.java
+ *
+ * {{cliHow}}
+ */
+public class CheckCli {
+
+    static final Path JAR = Path.of("stats-cli", "target", "stats-cli-1.0.0.jar");
+
+    record Result(int exitCode, String out, String err) { }
+
+    static int passed, failed;
+
+    public static void main(String[] args) throws Exception {
+        if (!Files.exists(JAR)) {
+            System.out.println("{{noJar}} " + JAR);
+            System.exit(2);
+        }
+        Path tmp = Files.createTempDirectory("lab02-check");
+        Path bad = Files.writeString(tmp.resolve("bad.txt"), "1, 2\nabc 3\n");
+        Path empty = Files.writeString(tmp.resolve("empty.txt"), "# {{onlyComments}}\n\n");
+
+        System.out.println("== stage4 ==");
+        expect("data.txt --percentile 90 --percentile 25", run("data.txt", "--percentile", "90", "--percentile", "25"), """
+                n        = 5
+                min      = 2.000
+                max      = 12.500
+                mean     = 7.000
+                median   = 7.000
+                stdDev   = 4.373
+                p90      = 11.500
+                p25      = 3.500
+                """);
+        expectExit("{{noArgs}}", run(), 2, null);
+        expectExit("{{unknownOption}}", run("data.txt", "--bogus"), 2, null);
+        expectExit("{{missingFile}}", run("no-such-file.txt"), 3, "{{fileNotFound}}");
+        expectExit("{{notANumber}}", run(bad.toString()), 4, "{{badLine}}");
+        expectExit("{{noNumbers}}", run(empty.toString()), 5, "{{noData}}");
+
+        System.out.printf("%n{{passedWord}}: %d, {{failedWord}}: %d%n", passed, failed);
+        System.exit(failed == 0 ? 0 : 1);
+    }
+
+    static Result run(String... args) throws Exception {
+        String java = ProcessHandle.current().info().command().orElse("java");
+        // English number format, as in the task: the output must use a dot
+        List<String> cmd = new ArrayList<>(List.of(java, "-Duser.language=en", "-Duser.country=US",
+                "-Dstdout.encoding=UTF-8", "-Dstderr.encoding=UTF-8", "-jar", JAR.toString()));
+        cmd.addAll(Arrays.asList(args));
+        Process p = new ProcessBuilder(cmd).start();
+        p.getOutputStream().close();
+        var out = new ByteArrayOutputStream();
+        var err = new ByteArrayOutputStream();
+        Thread t1 = Thread.ofPlatform().start(() -> copy(p.getInputStream(), out));
+        Thread t2 = Thread.ofPlatform().start(() -> copy(p.getErrorStream(), err));
+        if (!p.waitFor(30, TimeUnit.SECONDS)) { p.destroyForcibly(); throw new IllegalStateException("timeout"); }
+        t1.join();
+        t2.join();
+        return new Result(p.exitValue(), out.toString(StandardCharsets.UTF_8).replace("\r\n", "\n"),
+                err.toString(StandardCharsets.UTF_8).replace("\r\n", "\n"));
+    }
+
+    static void copy(InputStream in, OutputStream out) {
+        try { in.transferTo(out); } catch (IOException e) { throw new UncheckedIOException(e); }
+    }
+
+    static void expect(String name, Result r, String expected) {
+        if (r.exitCode() == 0 && r.out().equals(expected)) { ok(name); return; }
+        fail(name);
+        if (r.exitCode() != 0) System.out.println("    exit code " + r.exitCode() + "\n    " + r.err().strip().replace("\n", "\n    "));
+        String[] e = expected.split("\n", -1), o = r.out().split("\n", -1);
+        for (int i = 0; i < Math.max(e.length, o.length); i++) {
+            String a = i < e.length ? e[i] : "<->", b = i < o.length ? o[i] : "<->";
+            if (!a.equals(b)) System.out.printf("    {{lineWord}} %d: {{expectedWord}} \"%s\", {{gotWord}} \"%s\"%n", i + 1, a, b);
+        }
+    }
+
+    static void expectExit(String name, Result r, int code, String errStart) {
+        boolean okErr = errStart == null ? !r.err().isBlank() : r.err().strip().startsWith(errStart);
+        if (r.exitCode() == code && okErr) { ok(name); return; }
+        fail(name);
+        System.out.println("    {{exitExpected}} " + code + (errStart == null ? "" : ", System.err: \"" + errStart + "...\""));
+        System.out.println("    {{gotWord}}: " + r.exitCode() + ", System.err: \"" + r.err().strip() + "\"");
+    }
+
+    static void ok(String name) { passed++; System.out.println("  ✓ " + name); }
+    static void fail(String name) { failed++; System.out.println("  ✗ " + name); }
+}

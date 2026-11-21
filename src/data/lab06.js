@@ -1,230 +1,300 @@
 export const lab06 = {
   id: "Lab06",
-  title: "Лабораторна 6: Система Плагінів",
-  description: "Використання Reflection API, анотацій, Sealed Classes та патернів проектування для створення динамічної архітектури, що розширюється.",
+  title: "Лабораторна 06: Файли, потоки вводу-виводу та події — аналізатор логів",
+  description: "Розбір рядків журналу регулярними виразами, потокова обробка великих файлів без завантаження в пам'ять, рекурсивний обхід каталогів зі стиснутими файлами .gz, CSV-звіт і ZIP-архів із захистом від Zip Slip, а також спостерігач за файлами з подіями через слухачів.",
   sections: [
     {
-      title: "Опис завдання",
+      title: "Перед початком",
       content: `
 > [!NOTE]
-> **Рекомендовані лекції для цієї лаби:** Лекції 07, 08, 16
+> **Лекції:** 05.2 «Події», 05.3 «Керування ресурсами», 05.8 «Винятки», 07.1 «Потоки введення-виведення», 07.2 «Файлова система», 07.3 «Архіви» · **Час:** 3 год · **Бали:** 10
 
-У цій лабораторній роботі ви побудуєте **Систему Плагінів (Plugin System)** — типову архітектуру для додатків, які дозволяють стороннім розробникам додавати свій функціонал (як у VS Code чи IntelliJ IDEA).
+Ви пишете інструмент для адміністратора: він аналізує журнали застосунку, архівує їх і стежить за новими записами в реальному часі.
 
-Замість того, щоб жорстко "зашивати" (hardcode) логіку в головний клас, ваша програма буде **динамічно шукати** класи-плагіни під час виконання (Runtime) за допомогою Рефлексії, перевіряти їх і запускати.
+\`\`\`text
+src/main/java/pl/mini/logs/
+├── Level.java  LogEntry.java  LogParser.java
+├── LogStats.java  LogAnalyzer.java  DirectoryAnalyzer.java
+├── ReportWriter.java
+├── LogListener.java  LogWatcher.java
+└── Main.java   (наданий)
+\`\`\`
 
-Ця лабораторна покриває матеріал:
-* **Лекція 7:** Reflection API, створення власних анотацій.
-* **Лекція 8:** Sealed Classes, Pattern Matching (\`switch\` з типами).
-* **Лекція 16:** Патерни Strategy (Стратегія) та Factory (Фабрика).
+Формат рядка журналу:
+
+\`\`\`text
+2025-03-14T10:00:05 WARN [db] slow query 1200ms
+└──── час ────────┘ └рівень┘ └компонент┘ └повідомлення┘
+\`\`\`
+
+### Правила
+
+* Усі ресурси (потоки, читачі, \`Stream\` з \`Files.lines/walk\`) — **лише** в try-with-resources.
+* Кодування — завжди явно UTF-8.
+* \`LogAnalyzer\` має працювати з файлами, **більшими за доступну пам'ять**: заборонено \`Files.readAllLines\` і \`Files.readString\` у ньому.
+
+> [!CAUTION]
+> Заборонено ковтати винятки (\`catch (IOException e) {}\`). Або прокидайте \`IOException\` далі, або загортайте в \`UncheckedIOException\`, або (лише в \`DirectoryAnalyzer\`) пишіть попередження в \`System.err\` і продовжуйте.
 `
     },
     {
-      title: "Task 1: Контракт плагіна та Анотація (1 бал)",
+      title: "Швидке повторення теорії",
       content: `
-Щоб програма розуміла, які класи є плагінами, а які ні, нам потрібен маркер (анотація) та контракт (інтерфейс).
+### Регулярні вирази з іменованими групами
 
-### 1. Створення власної анотації
-Створіть анотацію \`@PluginInfo\` у пакеті \`org.example.plugins.api\`:
 \`\`\`java
-import java.lang.annotation.ElementType;
-import java.lang.annotation.Retention;
-import java.lang.annotation.RetentionPolicy;
-import java.lang.annotation.Target;
+private static final Pattern LINE = Pattern.compile(
+        "^(?<time>\\\\S+) (?<level>[A-Z]+) \\\\[(?<comp>[^\\\\]]+)] (?<msg>.*)$");
 
-// TODO 1: Зробіть так, щоб анотація була доступна в Runtime (RetentionPolicy)
-// TODO 2: Зробіть так, щоб анотацію можна було вішати тільки на Класи (ElementType)
-public @interface PluginInfo {
-    String name();
-    String version() default "1.0.0";
-    String author();
+Matcher m = LINE.matcher(line);
+if (m.matches()) {
+    String level = m.group("level");
 }
 \`\`\`
 
-### 2. Створення контракту (Sealed Interface)
-Створіть інтерфейс \`PluginAction\`, який будуть реалізовувати всі плагіни. Зробимо його \`sealed\`, щоб контролювати, які типи плагінів взагалі існують у системі.
+\`Pattern\` компілюйте **один раз** (static final): компіляція дорога.
+
+### Потокове читання і декоратори
 
 \`\`\`java
-package org.example.plugins.api;
-
-// TODO: Зробіть інтерфейс sealed. Він повинен дозволяти (permits) 
-// тільки дві категорії плагінів: TextPlugin та MathPlugin
-public interface PluginAction {
-    String execute(String input);
-}
-
-// TODO: Створіть інтерфейси TextPlugin та MathPlugin, 
-// які наслідують (extends) PluginAction. 
-// Вони мають бути 'non-sealed', щоб сторонні розробники могли їх реалізовувати.
-\`\`\`
-`
-    },
-    {
-      title: "Task 2: Розробка конкретных плагінів (1 бал)",
-      content: `
-Тепер, коли в нас є контракт (патерн **Strategy**), створіть кілька "сторонніх" плагінів у пакеті \`org.example.plugins.impl\`.
-
-\`\`\`java
-@PluginInfo(name = "UpperCase Converter", author = "System")
-public class UpperCasePlugin implements TextPlugin {
-    @Override
-    public String execute(String input) {
-        return input == null ? "" : input.toUpperCase();
-    }
+try (BufferedReader r = new BufferedReader(new InputStreamReader(
+        new GZIPInputStream(Files.newInputStream(path)), StandardCharsets.UTF_8))) {
+    String line;
+    while ((line = r.readLine()) != null) { ... }
 }
 \`\`\`
 
-Створіть ще два плагіни самостійно:
-1. \`ReverseTextPlugin\` (реалізує \`TextPlugin\`) — перевертає текст задом наперед. (Обов'язково додайте \`@PluginInfo\`).
-2. \`WordCountPlugin\` (реалізує \`MathPlugin\`) — рахує кількість слів у вхідному тексті і повертає число у вигляді рядка (наприклад, \`"5"\`).
-`
-    },
-    {
-      title: "Task 3: Динамічний завантажувач плагінів (Reflection) (2 бали)",
-      content: `
-Це найскладніша частина. Створіть клас \`PluginManager\` (патерн **Factory** / Registry), який через рефлексію "просканує" пакет і створить об'єкти плагінів.
-
-*Примітка: У реальних проектах для сканування пакетів використовують бібліотеку \`Reflections\` або механізми Spring. Тут ми для спрощення передамо список класів вручну, але інстанціювати їх будемо рефлексією.*
+### Обхід каталогу
 
 \`\`\`java
-import org.example.plugins.api.PluginAction;
-import org.example.plugins.api.PluginInfo;
-
-import java.lang.reflect.Constructor;
-import java.util.ArrayList;
-import java.util.List;
-
-public class PluginManager {
-    private final List<PluginAction> loadedPlugins = new ArrayList<>();
-
-    // У реальному житті тут був би сканер файлової системи (.class файлів).
-    // Ми передаємо масив класів для спрощення.
-    public void loadPlugins(Class<?>... classes) {
-        for (Class<?> clazz : classes) {
-            try {
-                // TODO 1: Перевірте, czy klasa posiada adnotację @PluginInfo.
-                // Użyj clazz.isAnnotationPresent(...)
-                
-                // TODO 2: Перевірте, czy klasa implementuje interfejs PluginAction.
-                // Użyj PluginAction.class.isAssignableFrom(clazz)
-
-                if (/* warunki spelnione */) {
-                    // TODO 3: Pobierz adnotację @PluginInfo, by wypisać w konsoli:
-                    // "Ladowanie wtyczki: [Nazwa] v[Wersja] autorstwa [Autor]"
-                    
-                    // TODO 4: Za pomocą refleksji pobierz bezparametrowy konstruktor
-                    // i stwórz nową instancję wtyczki (Constructor.newInstance()).
-                    
-                    // TODO 5: Rzutuj (cast) stworzony obiekt na PluginAction 
-                    // i dodaj do listy loadedPlugins.
-                } else {
-                    System.err.println("Pominiecie klasy " + clazz.getSimpleName() + " - niepoprawna wtyczka.");
-                }
-
-            } catch (Exception e) {
-                System.err.println("Blad ladowania wtyczki " + clazz.getName() + ": " + e.getMessage());
-            }
-        }
-    }
-
-    public List<PluginAction> getLoadedPlugins() {
-        return loadedPlugins;
-    }
+try (Stream<Path> files = Files.walk(dir)) {
+    List<Path> logs = files.filter(Files::isRegularFile)
+                           .filter(p -> p.getFileName().toString().endsWith(".log"))
+                           .sorted()
+                           .toList();
 }
+\`\`\`
+
+### Читання «хвоста» файлу з певної позиції
+
+\`\`\`java
+try (FileChannel ch = FileChannel.open(path, StandardOpenOption.READ)) {
+    ch.position(offset);
+    ByteBuffer buf = ByteBuffer.allocate((int) (ch.size() - offset));
+    while (buf.hasRemaining() && ch.read(buf) > 0) { }
+    String appended = new String(buf.array(), 0, buf.position(), StandardCharsets.UTF_8);
+}
+\`\`\`
+
+### Події: слухач — функціональний інтерфейс
+
+\`\`\`java
+@FunctionalInterface
+public interface LogListener {
+    void onEntry(Path file, LogEntry entry);
+}
+private final List<LogListener> listeners = new CopyOnWriteArrayList<>();
 \`\`\`
 `
     },
     {
-      title: "Task 4: Pattern Matching i Wykonanie (1 бал)",
+      title: "Очікуваний вивід",
       content: `
-Створіть клас \`Main\`, який з'єднає все разом.
+Так має виглядати вивід \`Main\` зі стартового проєкту, коли розкоментовано всі етапи:
 
-Ми використаємо новітню функцію **Pattern Matching for \`switch\`** (Java 21+), щоб по-різному обробляти математичні та текстові плагіни (адже ми закрили ієрархію через \`sealed interface\`).
-
+\`\`\`text
+Optional[LogEntry[time=2025-03-14T10:00, level=INFO, component=auth, message=user anna logged in]]
+Optional.empty
+Optional.empty
+{INFO=1, WARN=1, ERROR=3} malformed=1
+2025-03-14T10:00 2025-03-14T10:03 Optional[db]
+{INFO=2, WARN=1, ERROR=4} files=2
+2025-03-13T23:59 2025-03-14T10:03 {auth=1, cache=1, db=2}
+level,count
+INFO,2
+WARN,1
+ERROR,4
+app.log
+old/app-2025-03-13.log.gz
+report.csv
+OK: небезпечний запис в архіві: ../escaped.txt
+[]
+ALERT new.log: crash
+[app.log:INFO, new.log:ERROR]
+ALERT new.log: crash again
+2
+\`\`\`
+`
+    },
+    {
+      title: "Етап 1: Модель і парсер (2 б.)",
+      content: `
 \`\`\`java
-public class Main {
-    public static void main(String[] args) {
-        PluginManager manager = new PluginManager();
-        
-        // "Rejestrujemy" klasy do przeskanowania
-        manager.loadPlugins(
-                UpperCasePlugin.class, 
-                ReverseTextPlugin.class, 
-                WordCountPlugin.class, 
-                String.class // Ten nie ma adnotacji, powinien zostac pominiety!
-        );
+public enum Level { TRACE, DEBUG, INFO, WARN, ERROR }
 
-        String testText = "Witaj swiecie Java";
-        System.out.println("\\n--- Uruchamianie wtyczek dla tekstu: '" + testText + "' ---");
+public record LogEntry(LocalDateTime time, Level level, String component, String message) { }
 
-        for (PluginAction plugin : manager.getLoadedPlugins()) {
-            
-            // TODO: Użyj Pattern Matching w instrukcji switch!
-            // Zamiast if (plugin instanceof TextPlugin), użyj nowej składni:
-            /*
-            switch (plugin) {
-                case TextPlugin tp -> {
-                    System.out.println("[Tekst] Wynik: " + tp.execute(testText));
-                }
-                case MathPlugin mp -> {
-                    System.out.println("[Matematyka] Wynik: " + mp.execute(testText));
-                }
-                // default nie jest potrzebny, bo interfejs jest SEALED! Kompilator to wie.
-            }
-            */
-            
-            // Pamiętaj, aby przed wywołaniem pobrać @PluginInfo, żeby wypisać nazwę wtyczki obok wyniku.
-        }
-    }
+public final class LogParser {
+    public static Optional<LogEntry> parse(String line);
 }
 \`\`\`
+
+* Рядок, що не відповідає формату, має невідомий рівень або некоректну дату → \`Optional.empty()\` (а **не** виняток: зламаний рядок у журналі — нормальна ситуація).
+* Невідомий рівень перевіряйте без \`try/catch\` навколо \`Level.valueOf\`: побудуйте \`static final Map<String, Level>\` з \`Level.values()\`.
+* Некоректну дату (\`DateTimeParseException\`) ловіть і повертайте порожній результат.
+
+> [!TIP]
+> Чому \`Optional\`, а не \`null\`? Сигнатура одразу говорить викликачу: «результату може не бути». Крім того, \`parse\` зручно використовувати в потоках: \`lines.map(LogParser::parse).flatMap(Optional::stream)\`.
+`
+    },
+    {
+      title: "Етап 2: Потоковий аналіз одного файлу (2 б.)",
+      content: `
+\`\`\`java
+public record LogStats(Map<Level, Long> counts,           // EnumMap: лише рівні, що трапилися
+                       long malformed,
+                       LocalDateTime first, LocalDateTime last,   // null, якщо записів немає
+                       Map<String, Long> errorsByComponent,       // TreeMap
+                       int files) {
+    public Optional<String> topErrorComponent();   // найбільше ERROR; за рівності — менший за абеткою
+    public LogStats merge(LogStats other);         // поєднання статистик (етап 3)
+    public static LogStats empty();
+}
+
+public final class LogAnalyzer {
+    public static LogStats analyze(Path file) throws IOException;   // files = 1
+}
+\`\`\`
+
+* Читайте рядок за рядком через \`BufferedReader\`. Порожні рядки ігноруйте (не рахуйте як malformed).
+* Файли з назвою \`*.gz\` читайте через \`GZIPInputStream\`. Вибір декоратора — в одному приватному методі \`openReader(Path)\`.
+* \`LogStats\` — **незмінний**: у компактному конструкторі зробіть захисні копії мап (\`new EnumMap<>(counts)\`, \`new TreeMap<>(...)\`) і огорніть їх у \`Collections.unmodifiableMap\`.
+
+> [!WARNING]
+> \`EnumMap\` не можна створити з порожньої звичайної мапи конструктором \`new EnumMap<>(map)\`: він кидає \`IllegalArgumentException\`. Використовуйте \`new EnumMap<>(Level.class)\` + \`putAll\`.
+`
+    },
+    {
+      title: "Етап 3: Аналіз каталогу (2 б.)",
+      content: `
+\`\`\`java
+public final class DirectoryAnalyzer {
+    public static LogStats analyzeAll(Path dir) throws IOException;
+}
+\`\`\`
+
+* Рекурсивно знаходить файли \`*.log\` і \`*.log.gz\` (\`Files.walk\`) і поєднує їх статистики через \`LogStats.merge\`. Інші файли ігноруються.
+* Якщо окремий файл не вдалося прочитати (немає прав, пошкоджений gzip), друкуйте \`ПОПЕРЕДЖЕННЯ: <шлях>: <повідомлення>\` у \`System.err\` і продовжуйте. Такий файл не враховується в \`files\`.
+* \`merge\`: суми лічильників, \`min\` для \`first\`, \`max\` для \`last\` (з урахуванням \`null\`), сума \`files\`.
+
+> [!TIP]
+> \`merge\` для мап — одним рядком на ключ: \`result.merge(level, count, Long::sum)\`. Отже, \`analyzeAll\` — це просто \`reduce(LogStats.empty(), LogStats::merge)\` по всіх файлах.
+`
+    },
+    {
+      title: "Етап 4: CSV-звіт і ZIP-архів (2 б.)",
+      content: `
+\`\`\`java
+public final class ReportWriter {
+    public static void writeCsv(LogStats stats, Path out) throws IOException;
+    public static void archive(Path dir, Path zipFile) throws IOException;
+    public static void unzip(Path zipFile, Path targetDir) throws IOException;
+}
+\`\`\`
+
+* \`writeCsv\`: заголовок \`level,count\`, далі рядки в порядку оголошення \`Level\` (лише ті рівні, що трапилися), роздільник рядків — \`\\n\` (не системний).
+* \`archive\`: до архіву потрапляють файли \`*.log\`, \`*.log.gz\` і \`report.csv\` з каталогу і підкаталогів. Назви записів **відносні** до \`dir\` і завжди з \`/\` (навіть на Windows). Сам архів у себе не потрапляє.
+* \`unzip\`: розпаковує архів у \`targetDir\`. Для кожного запису перевіряйте:
+\`\`\`java
+Path target = targetDir.resolve(entry.getName()).normalize();
+if (!target.startsWith(targetDir.normalize()))
+    throw new IOException("небезпечний запис в архіві: " + entry.getName());
+\`\`\`
+
+> [!CAUTION]
+> **Zip Slip** — реальна вразливість, через яку свого часу постраждали тисячі проєктів. Запис \`../../.bashrc\` в архіві, отриманому з інтернету, перезаписав би файл користувача.
+`
+    },
+    {
+      title: "Етап 5: Спостерігач за журналами з подіями (2 б.)",
+      content: `
+На відміну від \`WatchService\`, тут використовується опитування (polling): так поведінка детермінована і її легко тестувати.
+
+\`\`\`java
+@FunctionalInterface
+public interface LogListener {
+    void onEntry(Path file, LogEntry entry);
+}
+
+public class LogWatcher {
+    public LogWatcher(Path dir) throws IOException;
+    public void addListener(LogListener l);
+    public void removeListener(LogListener l);
+    public void poll() throws IOException;
+}
+\`\`\`
+
+* Спостерігаємо лише файли \`*.log\` **безпосередньо** в \`dir\` (без підкаталогів і без \`.gz\`).
+* Під час створення спостерігач запам'ятовує поточний **розмір** кожного файлу: старі записи не цікаві, як у \`tail -f\`. Файли, що з'являться пізніше, читаються з початку.
+* \`poll()\` обходить файли **в алфавітному порядку**, читає байти від запам'ятованої позиції до кінця, розбирає **повні** рядки (ті, що закінчуються на \`\\n\`) і для кожного коректного запису викликає всіх слухачів. Позиція зсувається лише на довжину повних рядків: недописаний рядок буде прочитано під час наступного опитування.
+* Слухачі зберігаються в \`CopyOnWriteArrayList\`, тож слухач може відписатися навіть під час розсилки події.
+* Виняток у слухачі не повинен зупиняти розсилку іншим слухачам: перехопіть його і надрукуйте в \`System.err\`.
+
+> [!NOTE]
+> Позицію рахуйте в **байтах**, а не в символах: кирилиця в UTF-8 займає 2 байти на літеру. Тому використовуйте \`FileChannel\` чи \`RandomAccessFile\`, а не \`BufferedReader.skip\`.
+
+### Без балів: справжній WatchService
+
+Додайте метод \`watchForever()\`, який замість циклу з \`Thread.sleep\` чекає на події \`ENTRY_CREATE\`/\`ENTRY_MODIFY\` з \`WatchService\` і після кожної викликає \`poll()\`.
+
+Закомітьте, позначте тегом \`lab06\` і запуште.
 `
     }
   ],
   quiz: [
     {
-      question: "Co daje nam użycie interfejsu typu 'sealed' w kontekście instrukcji switch (od Java 21)?",
+      question: "Чому LogAnalyzer читає файл через BufferedReader, а не через Files.readAllLines?",
       options: [
-        "Szybsze działanie programu dzięki ominięciu mechanizmu refleksji.",
-        "Możliwość użycia switcha bez klauzuli 'default' (Exhaustiveness). Kompilator wie, że obsłużyliśmy wszystkie możliwe typy podrzędne.",
-        "Pozwala na nadpisywanie metod finalnych w klasach dziedziczących.",
-        "Blokuje możliwość wstrzyknięcia złośliwego kodu przez obcych programistów."
+        "readAllLines не підтримує UTF-8",
+        "readAllLines завантажує весь файл у пам'ять, а журнали бувають більшими за доступну пам'ять",
+        "BufferedReader швидше компілюється",
+        "Різниці немає"
       ],
       answer: 1,
-      explanation: "Kompilator sprawdza, czy 'switch' obejmuje wszystkie dozwolone w klauzuli 'permits' typy. Jeśli tak, 'default' jest zbędny, a kod jest w 100% bezpieczny i przewidywalny."
+      explanation: "Потокова обробка тримає в пам'яті лише поточний рядок і буфер, незалежно від розміру файлу."
     },
     {
-      question: "Jaki jest cel adnotacji '@Retention(RetentionPolicy.RUNTIME)' przy tworzeniu własnej adnotacji @PluginInfo?",
+      question: "Чому позицію в LogWatcher треба зберігати в байтах?",
       options: [
-        "Gwarantuje, że adnotacja zostanie zachowana w skompilowanym pliku .class i będzie dostępna do odczytu przez Reflection API podczas działania programu.",
-        "Nakazuje środowisku uruchomieniowemu ignorowanie tej klasy przy Garbage Collection.",
-        "Zabezpiecza kod przed atakami typu SQL Injection w czasie wykonywania.",
-        "Służy wyłącznie jako dokumentacja dla innych programistów."
-      ],
-      answer: 0,
-      explanation: "Domyślną polityką retencji w Javie jest CLASS (adnotacja znika po załadowaniu do pamięci). Aby użyć jej w refleksji (np. clazz.isAnnotationPresent()), musimy jawnie wskazać RUNTIME."
-    },
-    {
-      question: "Z jakim wzorcem projektowym (Design Pattern) najbardziej kojarzy się interfejs 'PluginAction' posiadający jedną metodę 'execute', która ma różne zachowania w zależności od implementacji?",
-      options: [
-        "Singleton",
-        "Factory Method",
-        "Strategy (Strategia)",
-        "Observer (Obserwator)"
-      ],
-      answer: 2,
-      explanation: "Wzorzec Strategy polega na wydzieleniu algorytmu (zachowania) do oddzielnej klasy implementującej wspólny interfejs. Pozwala to na dynamiczną wymianę (lub uruchamianie wielu) zachowań w czasie wykonania programu."
-    },
-    {
-      question: "Jakie wyjątki najczęściej rzuca Reflection API podczas próby utworzenia obiektu (np. clazz.getDeclaredConstructor().newInstance())?",
-      options: [
-        "NullPointerException oraz IOException",
-        "InstantiationException, IllegalAccessException, InvocationTargetException, NoSuchMethodException",
-        "ClassNotFoundException oraz OutOfMemoryError",
-        "Reflekcja nie rzuca wyjątków Checked, tylko Unchecked (RuntimeException)"
+        "Байти — це швидше",
+        "Символ UTF-8 може займати кілька байтів, а FileChannel.position працює з байтами; підрахунок у символах дасть неправильний зсув",
+        "Java не має типу char",
+        "Так вимагає ZIP"
       ],
       answer: 1,
-      explanation: "Refleksja jest wysoce niestabilna. Może brakować konstruktora (NoSuchMethodException), może być prywatny (IllegalAccessException), klasa może być abstrakcyjna (InstantiationException) lub sam konstruktor wtyczki może rzucić wyjątek (InvocationTargetException)."
+      explanation: "Кириличні літери займають 2 байти, емодзі — 4. Зсув у символах «з'їхав» би посеред багатобайтового символу."
+    },
+    {
+      question: "Яка перевірка захищає від Zip Slip?",
+      options: [
+        "Перевірити розширення файлу",
+        "Нормалізувати шлях цілі й переконатися, що він починається з каталогу розпакування",
+        "Обмежити розмір архіву",
+        "Перевірити CRC"
+      ],
+      answer: 1,
+      explanation: "resolve(\"../x\").normalize() виходить за межі каталогу, і startsWith(targetDir) повертає false."
+    },
+    {
+      question: "Чому список слухачів — CopyOnWriteArrayList?",
+      options: [
+        "Він швидший за ArrayList",
+        "Розсилка обходить знімок списку, тож слухач може відписатися (змінити список) під час розсилки без ConcurrentModificationException",
+        "Він сортує слухачів",
+        "Так вимагає FileChannel"
+      ],
+      answer: 1,
+      explanation: "Список слухачів читають часто, а змінюють рідко. Для такого сценарію CopyOnWrite ідеальний."
     }
   ]
 };

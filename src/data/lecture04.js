@@ -1,229 +1,463 @@
 export const lecture04 = {
   id: "04",
-  title: "Wykład 04: Programowanie Funkcjonalne & Kolekcje",
-  description: "Wprowadzenie do programowania funkcyjnego w Javie (wyrażenia lambda, interfejsy funkcyjne, referencje do metod) oraz przegląd struktur danych w Java Collections Framework.",
+  title: "Лекція 04: Лямбди, функціональні інтерфейси, події та винятки",
+  description: "Функціональні інтерфейси як аналог делегатів C#, лямбда-вирази і замикання, посилання на методи, композиція функцій, Comparable/Comparator, події через слухачів, а також система винятків Java: checked і unchecked, try-with-resources, власні винятки.",
   sections: [
     {
-      title: "1. Metody Domyślne w Interfejsach (Default Methods)",
+      title: "1. Функціональні інтерфейси — «делегати» Java",
       content: `
-Przed wersją Java 8 dodanie nowej metody do interfejsu wymuszało modyfikację wszystkich klas, które go implementowały. W celu zapewnienia kompatybilności wstecznej (szczególnie przy wprowadzaniu biblioteki Stream API), Java 8 wprowadziła **metody domyślne (default methods)**.
-
-Metoda domyślna posiada domyślną implementację wewnątrz interfejsu, oznaczoną słowem kluczowym \`default\`. Klasy implementujące interfejs mogą (ale nie muszą) ją nadpisać.
+У C# є окремий вид типів — **делегати** (\`Func<T,R>\`, \`Action<T>\`, \`Predicate<T>\`). У Java делегатів немає. Їхню роль виконують **функціональні інтерфейси**: інтерфейси з **рівно одним абстрактним методом** (SAM — Single Abstract Method). Будь-яку лямбду компілятор перетворює на реалізацію такого інтерфейсу.
 
 \`\`\`java
-public interface Logger {
-    void log(String message); // Metoda abstrakcyjna
+@FunctionalInterface            // необов'язково, але компілятор перевірить, що метод один
+public interface Validator<T> {
+    boolean validate(T value);
 
-    default void logWarning(String message) {
-        log("[WARNING] " + message); // Metoda domyślna
-    }
-}
-\`\`\`
-
-### Problem wielokrotnego dziedziczenia metod domyślnych (Diament):
-Jeśli klasa implementuje dwa interfejsy posiadające metody domyślne o tej samej sygnaturze, kompilator zgłosi błąd. Programista musi ręcznie rozstrzygnąć konflikt w klasie implementującej:
-
-\`\`\`java
-public class CustomLogger implements LoggerA, LoggerB {
-    @Override
-    public void logWarning(String message) {
-        // Jawne wywołanie konkretnej implementacji
-        LoggerA.super.logWarning(message); 
-    }
-}
-\`\`\`
-`
-    },
-    {
-      title: "2. Interfejsy Funkcyjne i Wyrażenia Lambda",
-      content: `
-**Interfejs Funkcyjny (Functional Interface)** to interfejs posiadający **dokładnie jedną metodę abstrakcyjną** (może zawierać wiele metod domyślnych lub statycznych). Zazwyczaj oznacza się go adnotacją \`@FunctionalInterface\`.
-
-Wyrażenie lambda to anonimowa implementacja interfejsu funkcyjnego, pozwalająca traktować kod jako dane (przekazywać funkcje jako parametry).
-
-Pakiet \`java.util.function\` definiuje standardowe interfejsy funkcyjne:
-1. **\`Predicate<T>\`**: Przyjmuje argument typu T, zwraca \`boolean\` (metoda \`test(T t)\`).
-2. **\`Consumer<T>\`**: Przyjmuje argument typu T, nic nie zwraca (metoda \`accept(T t)\`).
-3. **\`Supplier<T>\`**: Nie przyjmuje argumentów, zwraca wartość typu T (metoda \`get()\`).
-4. **\`Function<T, R>\`**: Przyjmuje argument typu T, zwraca wartość typu R (metoda \`apply(T t)\`).
-5. **\`BiFunction<T, U, R>\`**: Przyjmuje argumenty typów T i U, zwraca R.
-
-Przykład użycia lambd:
-\`\`\`java
-// Predicate
-Predicate<String> isNotEmpty = s -> !s.isEmpty();
-boolean check = isNotEmpty.test("Java"); // true
-
-// Consumer
-Consumer<String> printer = text -> System.out.println(text);
-printer.accept("Uruchamianie Consumer...");
-\`\`\`
-`
-    },
-    {
-      title: "3. Referencje do Metod (Method References)",
-      content: `
-Referencja do metody to skrócony zapis wyrażenia lambda, który odwołuje się do istniejącej metody za pomocą operatora \`::\`.
-
-Mamy cztery rodzaje referencji do metod:
-1. **Do metody statycznej**: \`ClassName::staticMethodName\` (np. \`Integer::parseInt\` zamiast \`s -> Integer.parseInt(s)\`).
-2. **Do metody instancji konkretnego obiektu**: \`containingObject::instanceMethodName\` (np. \`System.out::println\` zamiast \`x -> System.out.println(x)\`).
-3. **Do metody instancji obiektu dowolnego typu, przekazanego jako parametr**: \`ClassName::instanceMethodName\` (np. \`String::toUpperCase\` zamiast \`s -> s.toUpperCase()\`).
-4. **Do konstruktora**: \`ClassName::new\` (np. \`ArrayList::new\` zamiast \`() -> new ArrayList<>()\`).
-`
-    },
-    {
-      title: "4. Java Collections Framework (JCF)",
-      content: `
-Java Collections Framework (JCF) to ujednolicona architektura służąca do reprezentowania i manipulowania kolekcjami danych. Wszystkie główne kolekcje znajdują się w pakiecie \`java.util\` i dziedziczą po głównym interfejsie \`Collection<E>\` (z wyjątkiem map).
-
-### Najważniejsze interfejsy i ich implementacje:
-
-#### 1. List (Uporządkowana lista elementów, dopuszcza duplikaty):
-* **\`ArrayList\`**: Oparta na dynamicznej tablicy. Zapewnia stały czas dostępu \`O(1)\` przy odczycie po indeksie, ale usuwanie/wstawianie w środku trwa \`O(n)\`. Jest to domyślna implementacja.
-* **\`LinkedList\`**: Implementacja w postaci listy dwukierunkowej. Szybkie wstawianie/usuwanie na końcach \`O(1)\`, ale wolny dostęp po indeksie \`O(n)\`. Wstawianie/usuwanie w środku wymaga uprzedniego znalezienia węzła (\`O(n)\`), choć sama operacja modyfikacji wskaźników trwa \`O(1)\`.
-
-#### 2. Set (Kolekcja unikalnych elementów, brak duplikatów):
-* **\`HashSet\`**: Oparty na tablicy mieszającej (\`HashMap\`). Bardzo szybkie operacje wstawiania, usuwania i wyszukiwania \`O(1)\`. Brak gwarancji kolejności elementów.
-* **\`TreeSet\`**: Oparty na drzewie czerwono-czarnym. Elementy są automatycznie sortowane naturalnie (lub przez zadany Comparator). Wolniejsze operacje wyszukiwania i zapisu \`O(log n)\`.
-
-#### 3. Queue (Kolejka FIFO - First-In-First-Out):
-* Używana do buforowania elementów, np. \`PriorityQueue\` (kolejka priorytetowa) lub \`ArrayDeque\` (dwukierunkowa kolejka stosu/kolejki).
-`
-    },
-    {
-      title: "5. Comparable i Comparator — Porównywanie Obiektów",
-      content: `
-Aby sortować kolekcje obiektów lub umieszczać je w \`TreeSet\`/\`TreeMap\`, obiekty muszą być porównywalne. Java oferuje dwa mechanizmy:
-
-### Comparable\<T\> — porządek naturalny:
-Interfejs implementowany przez klasę, definiujący jej domyślny sposób porównywania:
-\`\`\`java
-public class Student implements Comparable<Student> {
-    private String name;
-    private double gpa;
-
-    @Override
-    public int compareTo(Student other) {
-        return Double.compare(this.gpa, other.gpa); // Sortowanie po GPA rosnąco
+    default Validator<T> and(Validator<T> other) {    // default-методи дозволені
+        return v -> validate(v) && other.validate(v);
     }
 }
 
-// Użycie:
-Collections.sort(students); // Użyje compareTo()
+Validator<String> notEmpty = s -> !s.isEmpty();
+Validator<String> shortStr = s -> s.length() < 10;
+System.out.println(notEmpty.and(shortStr).validate("Java"));  // true
 \`\`\`
 
-### Comparator\<T\> — porządek zewnętrzny:
-Interfejs funkcyjny definiujący alternatywny sposób porównywania, niezależny od klasy:
-\`\`\`java
-// Sortowanie po nazwisku (Comparator jako lambda)
-students.sort(Comparator.comparing(Student::getName));
+### Стандартні інтерфейси з java.util.function
 
-// Sortowanie po GPA malejąco, a przy remisie — po nazwisku rosnąco
-students.sort(
-    Comparator.comparingDouble(Student::getGpa).reversed()
-              .thenComparing(Student::getName)
-);
+| Java | Сигнатура | Аналог у C# |
+| --- | --- | --- |
+| \`Supplier<T>\` | \`() -> T\` | \`Func<T>\` |
+| \`Consumer<T>\` | \`T -> void\` | \`Action<T>\` |
+| \`BiConsumer<T,U>\` | \`(T, U) -> void\` | \`Action<T,U>\` |
+| \`Function<T,R>\` | \`T -> R\` | \`Func<T,R>\` |
+| \`BiFunction<T,U,R>\` | \`(T, U) -> R\` | \`Func<T,U,R>\` |
+| \`Predicate<T>\` | \`T -> boolean\` | \`Predicate<T>\` / \`Func<T,bool>\` |
+| \`UnaryOperator<T>\` | \`T -> T\` | \`Func<T,T>\` |
+| \`BinaryOperator<T>\` | \`(T, T) -> T\` | \`Func<T,T,T>\` |
+| \`Runnable\` | \`() -> void\` | \`Action\` |
+| \`Callable<V>\` | \`() -> V\` + throws | \`Func<V>\` |
+| \`Comparator<T>\` | \`(T, T) -> int\` | \`Comparison<T>\` |
+
+Є також **примітивні спеціалізації**, які не потребують boxing: \`IntPredicate\`, \`IntFunction<R>\`, \`ToIntFunction<T>\`, \`IntUnaryOperator\`, \`DoubleUnaryOperator\`, \`IntBinaryOperator\`, \`LongSupplier\` тощо.
+
+> [!NOTE]
+> У Java немає типу функції з трьома і більше параметрами (\`Func<T1,T2,T3,R>\`). Потрібен такий — оголосіть власний \`@FunctionalInterface\`.
+
+> [!WARNING]
+> У Java **немає multicast-делегатів** (\`+=\`/\`-=\`). Щоб викликати кілька обробників, зберігайте їх у списку (див. розділ про події).
+`
+    },
+    {
+      title: "2. Лямбда-вирази та замикання",
+      content: `
+\`\`\`java
+Runnable r = () -> System.out.println("без параметрів");
+Function<Integer, Integer> sq = x -> x * x;             // один параметр, без дужок
+BinaryOperator<Integer> add = (a, b) -> a + b;
+Comparator<String> byLen = (String a, String b) -> Integer.compare(a.length(), b.length());
+BiFunction<Integer, Integer, Integer> safeDiv = (a, b) -> {
+    if (b == 0) return 0;                               // блокове тіло потребує return
+    return a / b;
+};
+\`\`\`
+
+У Java стрілка \`->\`, а не \`=>\`, як у C#. Тип лямбди визначає **цільовий тип** (target type): та сама лямбда \`x -> x * 2\` може бути \`Function<Integer,Integer>\` або \`IntUnaryOperator\`, залежно від контексту.
+
+### Замикання: лише effectively final
+
+Лямбда може читати локальні змінні, але лише ті, які **не змінюються** після ініціалізації (effectively final). Це головна відмінність від C#, де змінні захоплюються «за посиланням» і можуть змінюватися.
+
+\`\`\`java
+int base = 10;
+Function<Integer, Integer> addBase = x -> x + base;   // OK
+// base = 20;     // тепер лямбда вище не скомпілюється
+
+int counter = 0;
+// list.forEach(x -> counter++);   // ПОМИЛКА: counter не effectively final
+\`\`\`
+
+Чому так: лямбда може пережити метод і виконатися в іншому потоці, а локальні змінні живуть на стеку, який уже зник. Тому Java **копіює** значення в лямбду і забороняє змінювати оригінал, щоб копія та оригінал не розходилися.
+
+Обхідні шляхи (краще їх уникати):
+
+\`\`\`java
+int[] box = {0};                               // масив з одного елемента
+AtomicInteger cnt = new AtomicInteger();       // потокобезпечно
+list.forEach(x -> cnt.incrementAndGet());
+long better = list.stream().count();           // найкраще: без побічних ефектів
 \`\`\`
 
 > [!TIP]
-> Zasada: \`Comparable\` definiujesz raz w klasie (porządek naturalny). \`Comparator\` tworzysz na zewnątrz, kiedy potrzebujesz wielu różnych sortowań.
+> Поля класу (\`this.field\`) лямбда змінювати **може**, бо захоплюється \`this\`, а не саме поле. Проте спільний змінюваний стан — головне джерело помилок у багатопотоковому коді.
+
+### Пастка з циклом із C# тут неможлива
+
+\`\`\`java
+List<Runnable> actions = new ArrayList<>();
+for (int i = 0; i < 3; i++) {
+    // actions.add(() -> System.out.println(i));   // ПОМИЛКА: i змінюється
+    int copy = i;
+    actions.add(() -> System.out.println(copy));   // 0, 1, 2
+}
+for (String s : List.of("a", "b")) {
+    actions.add(() -> System.out.println(s));      // OK: s — нова змінна в кожній ітерації
+}
+\`\`\`
 `
     },
     {
-      title: "6. Text Blocks — Wieloliniowe Napisy (Java 15+)",
+      title: "3. Посилання на методи і композиція функцій",
       content: `
-Od Javy 15 dostępne są **Text Blocks** — wieloliniowe literały tekstowe otoczone potrójnymi cudzysłowami. Automatycznie obsługują wcięcia, znaki nowej linii i nie wymagają escapeowania cudzysłowów wewnątrz tekstu.
+Якщо лямбда лише викликає існуючий метод, її можна замінити **посиланням на метод** (\`::\`):
 
-Porównanie tradycyjnego podejścia i Text Blocks:
+| Вид | Приклад | Еквівалентна лямбда |
+| --- | --- | --- |
+| Статичний метод | \`Integer::parseInt\` | \`s -> Integer.parseInt(s)\` |
+| Метод конкретного об'єкта | \`System.out::println\` | \`x -> System.out.println(x)\` |
+| Метод довільного об'єкта типу | \`String::toUpperCase\` | \`s -> s.toUpperCase()\` |
+| Конструктор | \`ArrayList::new\` | \`() -> new ArrayList<>()\` |
+| Конструктор масиву | \`int[]::new\` | \`n -> new int[n]\` |
+
 \`\`\`java
-// Bez Text Blocks (przed Java 15) — nieczytelne!
-String json = "{" +
-    "  name: Jan," +
-    "  age: 25" +
-    "}";
+List<String> names = List.of("anna", "bob");
+names.stream().map(String::toUpperCase).forEach(System.out::println);
 
-// Z Text Blocks (Java 15+) — czytelne i naturalne
-// Składnia: trzy cudzysłowy otwierające, treść, trzy cudzysłowy zamykające
-String json = """
-        {
-            "name": "Jan",
-            "age": 25
-        }
-        """;
+Function<String, Integer> parse = Integer::parseInt;
+BiFunction<String, String, Boolean> eq = String::equals;   // (a, b) -> a.equals(b)
+Supplier<List<String>> mk = ArrayList::new;
 \`\`\`
 
-Text Blocks idealnie nadają się do osadzania w kodzie:
-* Zapytań SQL: \`SELECT * FROM users WHERE age > 18\`
-* Fragmentów HTML/XML
-* Szablonów JSON/YAML
-* Komunikatów wieloliniowych
+### Композиція
 
-> [!NOTE]
-> Wcięcie wspólne dla wszystkich linii jest automatycznie usuwane (incidental whitespace). Pozycja zamykających trzech cudzysłowów definiuje poziom bazowy wcięcia.
+Стандартні інтерфейси мають default-методи для побудови нових функцій:
+
+\`\`\`java
+Function<Integer, Integer> plus2 = x -> x + 2;
+Function<Integer, Integer> times3 = x -> x * 3;
+plus2.andThen(times3).apply(1);    // (1 + 2) * 3 = 9
+plus2.compose(times3).apply(1);    // 1 * 3 + 2 = 5
+Function.<Integer>identity();      // x -> x
+
+Predicate<String> empty = String::isEmpty;
+Predicate<String> notEmpty = empty.negate();
+Predicate<String> ok = notEmpty.and(s -> s.length() < 5).or(s -> s.equals("*"));
+Predicate.not(String::isBlank);    // зручно у filter(...)
+\`\`\`
+
+### Функції, що повертають функції
+
+\`\`\`java
+static Supplier<Double> randomIn(double from, double to) {
+    Random rng = new Random();
+    return () -> from + rng.nextDouble() * (to - from);
+}
+
+static DoubleUnaryOperator derivative(DoubleUnaryOperator f, double h) {
+    return x -> (f.applyAsDouble(x + h) - f.applyAsDouble(x - h)) / (2 * h);
+}
+
+DoubleUnaryOperator cube = x -> x * x * x;
+System.out.println(derivative(cube, 1e-5).applyAsDouble(2));   // ≈ 12.0
+\`\`\`
 `
     },
     {
-      title: "7. Czego Java nie posiada: Extension Methods i Tuples",
+      title: "4. Comparable і Comparator",
       content: `
-Kilka konstrukcji obecnych w C# nie istnieje w Javie. Warto znać ich alternatywy:
+### Comparable<T> — природний порядок
 
-### Brak Extension Methods:
-W C# można "doczepić" nową metodę do istniejącej klasy bez jej modyfikacji. Java tego **nie wspiera**. Alternatywy:
-* **Klasy narzędziowe (Utility Classes)**: Statyczne metody w klasach typu \`Collections\`, \`Arrays\`, \`Files\`, \`Objects\`:
-  \`\`\`java
-  // Zamiast "myList.isEmpty()" jako extension:
-  Collections.unmodifiableList(myList);
-  Objects.requireNonNull(value, "Wartość nie może być null");
-  \`\`\`
-* **Metody domyślne w interfejsach (default methods)**: Dodają nowe metody do interfejsu bez łamania istniejących implementacji — ale wymagają dziedziczenia po interfejsie.
+Аналог \`IComparable<T>\` з C#. Його використовують \`Collections.sort\`, \`TreeMap\`, \`TreeSet\` і \`stream.sorted()\`.
 
-### Brak natywnych Tuple:
-Java nie posiada wbudowanych krotek (tuple). Alternatywy:
-* **Record (Java 16+)** — funkcjonalnie odpowiada nazwanej krotce:
-  \`\`\`java
-  record Pair<A, B>(A first, B second) {}
-  var result = new Pair<>("Anna", 25);
-  System.out.println(result.first()); // "Anna"
-  \`\`\`
-* **Map.Entry\<K,V\>** — para klucz-wartość do tymczasowego użytku.
-* Biblioteki: \`Pair\` z Apache Commons Lang lub JavaFX.
+\`\`\`java
+public record Student(String name, double gpa, int year) implements Comparable<Student> {
+    @Override
+    public int compareTo(Student o) {
+        return Double.compare(o.gpa, this.gpa);    // за спаданням середнього балу
+    }
+}
+\`\`\`
+
+> [!CAUTION]
+> Не пишіть \`return this.x - o.x;\`: при великих значеннях виникне переповнення і знак результату буде неправильним. Використовуйте \`Integer.compare\`, \`Double.compare\`.
+
+### Comparator<T> — зовнішній порядок
+
+\`\`\`java
+List<Student> list = new ArrayList<>(students);
+
+list.sort(Comparator.comparing(Student::name));
+list.sort(Comparator.comparingDouble(Student::gpa).reversed());
+list.sort(Comparator.comparingInt(Student::year)
+        .thenComparing(Student::name)
+        .thenComparing(Student::gpa, Comparator.reverseOrder()));
+
+// null-безпечний порядок
+list.sort(Comparator.comparing(Student::name, Comparator.nullsLast(Comparator.naturalOrder())));
+
+// без урахування регістру
+names.sort(String.CASE_INSENSITIVE_ORDER);
+\`\`\`
+
+> [!NOTE]
+> Узгодженість з equals: якщо \`compareTo\` повертає 0 для об'єктів, які не рівні за \`equals\`, то \`TreeSet\` вважатиме їх дублікатами, і один з них «зникне».
+`
+    },
+    {
+      title: "5. Події та слухачі (замість event у C#)",
+      content: `
+У C# є ключове слово \`event\` і оператори \`+=\`/\`-=\`. У Java подій на рівні мови немає. Використовують патерн **Observer (Listener)**: список обробників, оформлених як функціональні інтерфейси.
+
+\`\`\`java
+public record PriceChanged(String symbol, double oldPrice, double newPrice) { }
+
+@FunctionalInterface
+public interface PriceListener {
+    void onPriceChanged(PriceChanged event);
+}
+
+public class Stock {
+    private final String symbol;
+    private double price;
+    private final List<PriceListener> listeners = new CopyOnWriteArrayList<>();
+
+    public Stock(String symbol, double price) { this.symbol = symbol; this.price = price; }
+
+    public void addListener(PriceListener l)    { listeners.add(l); }     // "+="
+    public void removeListener(PriceListener l) { listeners.remove(l); }  // "-="
+
+    public void setPrice(double newPrice) {
+        if (newPrice == price) return;
+        var event = new PriceChanged(symbol, price, newPrice);
+        price = newPrice;
+        for (PriceListener l : listeners) l.onPriceChanged(event);        // "raise"
+    }
+}
+
+Stock s = new Stock("ACME", 10);
+PriceListener logger = e -> System.out.printf("%s: %.2f -> %.2f%n",
+        e.symbol(), e.oldPrice(), e.newPrice());
+s.addListener(logger);
+s.addListener(e -> { if (e.newPrice() > 100) System.out.println("Продавай!"); });
+s.setPrice(12);     // ACME: 10.00 -> 12.00
+s.removeListener(logger);
+\`\`\`
+
+* \`CopyOnWriteArrayList\` дозволяє обробнику відписатися прямо під час розсилки, не спричинивши \`ConcurrentModificationException\`.
+* Відписуватися можна лише **тим самим об'єктом**: дві однакові за текстом лямбди — різні об'єкти. Тому слухача, якого треба буде видалити, зберігайте в змінній.
+
+> [!WARNING]
+> Забутий слухач тримає посилання на об'єкт-підписник, і той ніколи не буде зібраний GC. Це найпоширеніший витік пам'яті в GUI-застосунках.
+`
+    },
+    {
+      title: "6. Чого в Java немає: extension methods, кортежі, перевантаження операторів",
+      content: `
+| C# | Java |
+| --- | --- |
+| Extension methods (\`this T x\`) | статичні методи в утилітних класах: \`Collections.max(list)\`, \`StringUtils.reverse(s)\` |
+| Кортежі \`(int, string)\` | \`record Pair(int a, String b)\` — оголошується в один рядок, навіть локально в методі |
+| Перевантаження операторів | немає: \`a.add(b)\`, \`a.compareTo(b)\`, \`a.equals(b)\` (див. \`BigDecimal\`) |
+| \`out\`/\`ref\`-параметри | повернення record або об'єкта |
+| Властивості \`{ get; set; }\` | getter/setter або records |
+| Параметри за замовчуванням | перевантаження або Builder |
+
+\`\`\`java
+// "розширення" — звичайний статичний метод
+public final class StringUtils {
+    private StringUtils() { }                       // утилітний клас: без екземплярів
+    public static String reverse(String s) {
+        return new StringBuilder(s).reverse().toString();
+    }
+}
+
+// "кортеж" — локальний record
+List<String> words = List.of("a", "bb", "ccc");
+record WordLen(String word, int len) { }
+var pairs = words.stream().map(w -> new WordLen(w, w.length())).toList();
+\`\`\`
+`
+    },
+    {
+      title: "7. Винятки: ієрархія, checked і unchecked",
+      content: `
+\`\`\`text
+Throwable
+├── Error                      збої JVM: OutOfMemoryError, StackOverflowError (не ловимо)
+└── Exception                  checked: компілятор вимагає обробки
+    ├── IOException, SQLException, InterruptedException, ...
+    └── RuntimeException       unchecked: обробка необов'язкова
+        ├── NullPointerException
+        ├── IllegalArgumentException, IllegalStateException
+        ├── IndexOutOfBoundsException, ArithmeticException
+        └── UnsupportedOperationException, ClassCastException, ...
+\`\`\`
+
+### Checked exceptions — унікальна риса Java
+
+Якщо метод може кинути **checked**-виняток, він мусить або обробити його, або оголосити в сигнатурі (\`throws\`). У C# такої вимоги немає: там усі винятки unchecked.
+
+\`\`\`java
+public String readFirstLine(Path p) throws IOException {   // оголошуємо
+    try (BufferedReader r = Files.newBufferedReader(p)) {
+        return r.readLine();
+    }
+}
+
+void caller() {
+    try {
+        readFirstLine(Path.of("data.txt"));
+    } catch (NoSuchFileException e) {          // спочатку конкретніший тип
+        System.err.println("Немає файлу: " + e.getFile());
+    } catch (IOException e) {
+        throw new UncheckedIOException(e);     // загорнути в unchecked
+    } finally {
+        System.out.println("виконається завжди");
+    }
+}
+\`\`\`
+
+### Multi-catch і повторне кидання
+
+\`\`\`java
+try {
+    risky();
+} catch (IOException | SQLException e) {        // один обробник для кількох типів
+    log.error("Помилка доступу до даних", e);
+    throw new DataAccessException("Не вдалося завантажити", e);   // зберігаємо cause!
+}
+\`\`\`
+
+### Коли що кидати
+
+| Ситуація | Виняток |
+| --- | --- |
+| Неправильний аргумент | \`IllegalArgumentException\` |
+| Об'єкт у неправильному стані для операції | \`IllegalStateException\` |
+| Обов'язковий аргумент null | \`NullPointerException\` (через \`Objects.requireNonNull\`) |
+| Індекс поза межами | \`IndexOutOfBoundsException\` |
+| Операція не підтримується | \`UnsupportedOperationException\` |
+| Зовнішній ресурс (файл, мережа), який можна обробити | checked (\`IOException\`) |
+
+> [!CAUTION]
+> Ніколи не пишіть \`catch (Exception e) { }\`: так помилки тихо зникають. Мінімум — залогувати; краще — обробити або загорнути й кинути далі з причиною (\`cause\`).
+
+### Checked-винятки і лямбди
+
+Стандартні функціональні інтерфейси не оголошують \`throws\`, тому в \`map(...)\` не можна просто викликати метод, що кидає \`IOException\`:
+
+\`\`\`java
+paths.stream()
+     .map(p -> {
+         try { return Files.readString(p); }
+         catch (IOException e) { throw new UncheckedIOException(e); }
+     })
+     .toList();
+\`\`\`
+`
+    },
+    {
+      title: "8. Власні винятки і try-with-resources",
+      content: `
+\`\`\`java
+// unchecked — порушення бізнес-правил, помилки програміста
+public class InsufficientFundsException extends RuntimeException {
+    private final BigDecimal missing;
+
+    public InsufficientFundsException(BigDecimal missing) {
+        super("Бракує коштів: " + missing);
+        this.missing = missing;
+    }
+
+    public BigDecimal getMissing() { return missing; }
+}
+
+// checked — ситуація, яку викликач реально може обробити
+public class ConfigNotFoundException extends Exception {
+    public ConfigNotFoundException(String message, Throwable cause) {
+        super(message, cause);
+    }
+}
+\`\`\`
+
+### try-with-resources
+
+Аналог \`using\` у C#. Будь-який об'єкт, що реалізує \`AutoCloseable\`, буде закритий автоматично, навіть якщо в блоці виникне виняток. Ресурси закриваються у **зворотному** порядку.
+
+\`\`\`java
+try (var in = new FileInputStream("a.bin");
+     var out = new FileOutputStream("b.bin")) {
+    in.transferTo(out);
+}   // спочатку out.close(), потім in.close()
+\`\`\`
+
+Якщо виняток виник і в тілі, і в \`close()\`, то основним лишається виняток з тіла, а виняток з \`close()\` додається як **suppressed**: \`e.getSuppressed()\`.
+
+Детально про \`AutoCloseable\` — у лекції 07.
 `
     }
   ],
   quiz: [
     {
-      question: "Jaki jest główny cel wprowadzania metod domyślnych (default methods) w interfejsach Javy 8?",
+      question: "Що в Java відповідає делегату Func<string, int> з C#?",
       options: [
-        "Umożliwienie symulacji wielokrotnego dziedziczenia stanu klasy.",
-        "Ułatwienie ewolucji interfejsów bez łamania kompatybilności wstecznej z istniejącymi implementacjami.",
-        "Zastąpienie klas abstrakcyjnych we wszystkich scenariuszach.",
-        "Zwiększenie bezpieczeństwa poprzez ukrywanie kodu przed refleksją."
+        "Supplier<String>",
+        "Function<String, Integer>",
+        "Consumer<String>",
+        "BiFunction<String, Integer>"
       ],
       answer: 1,
-      explanation: "Metody domyślne pozwoliły na rozbudowę bibliotek standardowych (np. dodanie metody stream() do interfejsu Collection) bez konieczności modyfikowania wszystkich klas zewnętrznych implementujących te interfejsy."
+      explanation: "Function<T,R> приймає T і повертає R. Supplier нічого не приймає, а Consumer нічого не повертає."
     },
     {
-      question: "Zapis 'System.out::println' jest przykładem czego?",
+      question: "Чому цей код не скомпілюється: int c = 0; list.forEach(x -> c++);",
       options: [
-        "Referencji do metody instancyjnej konkretnego obiektu",
-        "Referencji do metody statycznej",
-        "Referencji do konstruktora",
-        "Przeciążania operatora wywołania metody"
+        "forEach не приймає лямбд",
+        "Лямбда може захоплювати лише effectively final локальні змінні",
+        "c++ не можна використовувати з int",
+        "Потрібно написати x => c++"
+      ],
+      answer: 1,
+      explanation: "Java копіює значення захоплених локальних змінних у лямбду, тому забороняє їх змінювати. Використайте count(), AtomicInteger або поле класу."
+    },
+    {
+      question: "Що поверне plus2.andThen(times3).apply(1), де plus2 = x -> x + 2, times3 = x -> x * 3?",
+      options: ["5", "9", "6", "7"],
+      answer: 1,
+      explanation: "andThen спочатку застосовує plus2 (1 + 2 = 3), а потім times3 (3 * 3 = 9). compose виконує функції у зворотному порядку."
+    },
+    {
+      question: "Чим checked-винятки відрізняються від unchecked?",
+      options: [
+        "Checked-винятки компілятор вимагає обробити або оголосити в throws; unchecked (RuntimeException) — ні",
+        "Unchecked-винятки не можна перехопити",
+        "Checked-винятки кидає лише JVM",
+        "Різниці немає"
       ],
       answer: 0,
-      explanation: "System.out zwraca obiekt typu PrintStream. Operator :: odwołuje się do jego metody instancyjnej println. Jest to referencja do metody instancyjnej konkretnego obiektu."
+      explanation: "Підкласи Exception, крім RuntimeException, є checked. У C# такого механізму немає взагалі."
     },
     {
-      question: "Która kolekcja będzie najbardziej wydajna, jeśli zależy nam na błyskawicznym sprawdzaniu obecności elementu bez dbania o ich kolejność?",
+      question: "Як у Java реалізують аналог event з C#?",
       options: [
-        "ArrayList",
-        "LinkedList",
-        "HashSet",
-        "TreeSet"
+        "Ключовим словом event",
+        "Оператором += на методах",
+        "Списком слухачів (функціональних інтерфейсів) і методами add/removeListener",
+        "Через анотацію @Event"
       ],
       answer: 2,
-      explanation: "HashSet opiera się na strukturze tablicy mieszającej i oferuje średni czas wyszukiwania O(1) (stały), co jest najszybszym rozwiązaniem."
+      explanation: "Це патерн Observer. Обробник — функціональний інтерфейс, тож підписатися можна лямбдою."
+    },
+    {
+      question: "Який компаратор сортує студентів за роком, а за однакового року — за ім'ям?",
+      options: [
+        "Comparator.comparing(Student::name).thenComparing(Student::year)",
+        "Comparator.comparingInt(Student::year).thenComparing(Student::name)",
+        "Comparator.comparingInt(Student::year).reversed()",
+        "(a, b) -> a.year() - b.name()"
+      ],
+      answer: 1,
+      explanation: "Перший критерій задає comparing, а thenComparing використовується лише за рівності першого критерію."
     }
   ]
 };

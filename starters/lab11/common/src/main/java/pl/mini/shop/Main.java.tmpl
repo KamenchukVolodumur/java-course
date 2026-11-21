@@ -1,0 +1,62 @@
+package pl.mini.shop;
+
+import pl.mini.shop.model.*;
+import pl.mini.shop.discount.*;
+import pl.mini.shop.events.*;
+import pl.mini.shop.pricing.*;
+import java.math.BigDecimal;
+import java.util.*;
+
+public class Main {
+    public static void main(String[] args) {
+        // ===== STAGE 1 =====
+        // Customer ola = new Customer("Ola", CustomerType.STUDENT);
+        // Order o = Order.builder().customer(ola)
+        //         .item("{{keyboard}}", "120.00", 1).item("{{mouse}}", "45.50", 2)
+        //         .shipTo("{{addr1}}").build();
+        // System.out.println(o.subtotal() + " " + o.itemCount() + " " + o.promoCode());
+        // try { Order.builder().customer(ola).shipTo("x").build(); }
+        // catch (IllegalStateException e) { System.out.println("OK: " + e.getMessage()); }
+        // try { Order.builder().item("X", "-1.00", 1); }
+        // catch (IllegalArgumentException e) { System.out.println("OK: " + e.getMessage()); }
+
+        // ===== STAGE 2 =====
+        // Order o2 = o.toBuilder().promoCode("MINUS20").build();
+        // Order o3 = Order.builder().customer(new Customer("Jan", CustomerType.REGULAR))
+        //         .item("{{cable}}", "9.99", 5).shipTo("x").build();
+        // Order o4 = o3.toBuilder().clearItems().item("{{cable}}", "9.99", 1).promoCode("NOSUCH").build();
+        // for (Order x : List.of(o, o2, o3, o4)) {
+        //     Discount d = DiscountFactory.best(x);
+        //     System.out.println(d.source() + " -> " + d.amount());
+        // }
+
+        // ===== STAGE 3 =====
+        // OrderEvents events = new OrderEvents();
+        // Inventory inv = new Inventory(Map.of("{{keyboard}}", 5, "{{mouse}}", 1, "{{cable}}", 100));
+        // Analytics an = new Analytics();
+        // List<String> mails = new ArrayList<>();
+        // events.subscribe(OrderPlaced.class, inv::onPlaced);
+        // events.subscribe(OrderPlaced.class, e -> mails.add("{{mailTo}} " + e.order().customer().name()
+        //         + ": {{mailOrder}} " + e.orderId() + " {{mailAccepted}}"));
+        // events.subscribe(OrderPlaced.class, an::onPlaced);
+        // events.subscribe(OrderCancelled.class, an::onCancelled);
+        // events.publish(new OrderPlaced("ORD-1", o, new BigDecimal("196.00")));
+        // System.out.println(inv.stock("{{keyboard}}") + " " + inv.stock("{{mouse}}") + " " + mails + " " + an.revenue());
+        // System.out.println(events.errors());
+        // events.publish(new OrderCancelled("ORD-1", new BigDecimal("196.00")));
+        // System.out.println(an.revenue());
+
+        // ===== STAGE 4 =====
+        // Priced p = new Shipping(new Insurance(new GiftWrap(new BasePrice(o, DiscountFactory.best(o)))), false);
+        // System.out.println(p.description());
+        // System.out.println("{{total}} " + p.price());
+
+        // ===== STAGE 5 =====
+        // OrderService svc = new OrderService(events);
+        // Receipt r = svc.place(new OrderRequest(new Customer("Jan", CustomerType.VIP),
+        //         List.of(new OrderItem("Monitor", new BigDecimal("899.99"), 1)),
+        //         "{{addr2}}", null, true, true, true));
+        // System.out.print(r);
+        // System.out.println(an.revenue() + " " + mails.size() + " " + events.errors().size());
+    }
+}

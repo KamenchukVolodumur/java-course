@@ -1,0 +1,16 @@
+{
+  "readme": {
+    "title": { "ua": "Лабораторна 04: Узагальнення, ітератори та колекції", "en": "Lab 04: Generics, Iterators and Collections" },
+    "files": [
+      { "names": ["Main.java"], "status": "main" },
+      { "names": ["RingBuffer", "CollectionUtils", "MultiMap", "LruCache", "WordIndex"], "status": "yours" },
+      { "names": ["src/test/java/..."], "status": "tests" }
+    ],
+    "mains": ["pl.mini.collections.Main"],
+    "stages": ["stage1", "stage2", "stage3", "stage4", "stage5"],
+    "notes": {
+      "ua": "> Тести не перевіряють заборон із завдання (сирі типи, Stream API, `Collections.max`) — їх перевіряє викладач.",
+      "en": "> The tests do not check the restrictions from the task (raw types, the Stream API, `Collections.max`) — the instructor checks them."
+    }
+  }
+}

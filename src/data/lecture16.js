@@ -1,53 +1,60 @@
 export const lecture16 = {
   id: "16",
-  title: "Wykład 16: Zasady SOLID i Wzorce Projektowe (Design Patterns)",
-  description: "Kompletny przewodnik po pięciu zasadach SOLID, najważniejszych wzorcach projektowych GoF (kreacyjnych, strukturalnych i behawioralnych) oraz koncepcji Dependency Injection — fundamencie frameworków takich jak Spring.",
+  title: "Лекція 16: Принципи SOLID і патерни проєктування",
+  description: "П'ять принципів SOLID, найважливіші патерни GoF (породжувальні, структурні, поведінкові) і впровадження залежностей (Dependency Injection), на якому побудовані фреймворки на кшталт Spring.",
   sections: [
     {
-      title: "1. Wprowadzenie: Po co nam zasady i wzorce?",
+      title: "1. Вступ: навіщо принципи й патерни",
       content: `
-Pisanie kodu, który *działa*, to dopiero początek. Prawdziwym wyzwaniem jest pisanie kodu, który jest **łatwy do zrozumienia**, **prosty do rozszerzenia** i **odporny na zmiany**. Zasady SOLID i wzorce projektowe to sprawdzone w praktyce receptury, które pomagają osiągnąć te cele.
+Написати код, який *працює*, — це лише початок. Справжнє завдання — написати код, який **легко зрозуміти**, **просто розширити** і який **витримує зміни вимог**. Принципи SOLID і патерни проєктування — перевірені практикою рецепти для цього.
 
-### Czym są zasady SOLID?
-SOLID to akronim opisujący pięć fundamentalnych zasad projektowania obiektowego, sformułowanych przez Roberta C. Martina (Uncle Bob). Ich celem jest tworzenie kodu, który:
-* Jest odporny na zmiany wymagań biznesowych.
-* Minimalizuje efekt "domina" — zmiana w jednym miejscu nie powoduje kaskady błędów w innych.
-* Jest łatwy do testowania jednostkowego.
+### Що таке SOLID
 
-### Czym są wzorce projektowe?
-Wzorce projektowe (Design Patterns) to **powtarzalne, sprawdzone rozwiązania typowych problemów projektowych**. Nie są gotowym kodem do skopiowania, lecz schematami, które programista adaptuje do swojej konkretnej sytuacji. Zostały skatalogowane w 1994 roku przez tzw. "Gang of Four" (GoF) w książce *"Design Patterns: Elements of Reusable Object-Oriented Software"*.
+SOLID — акронім п'яти принципів об'єктно-орієнтованого проєктування, які сформулював Роберт Мартін (Uncle Bob). Вони допомагають писати код, який:
 
-Dzielą się na trzy kategorie:
-1. **Kreacyjne** (Creational) — dotyczą sposobu tworzenia obiektów.
-2. **Strukturalne** (Structural) — dotyczą kompozycji klas i obiektów.
-3. **Behawioralne** (Behavioral) — dotyczą komunikacji między obiektami.
+* стійкий до змін бізнес-вимог;
+* мінімізує «ефект доміно»: зміна в одному місці не ламає десяток інших;
+* легко покривається модульними тестами.
+
+### Що таке патерни проєктування
+
+Патерни (design patterns) — це **повторювані, перевірені рішення типових задач проєктування**. Це не готовий код для копіювання, а схеми, які адаптують до конкретної ситуації. Їх систематизувала «Банда чотирьох» (Gang of Four, GoF) у книзі *«Design Patterns: Elements of Reusable Object-Oriented Software»* (1994).
+
+Патерни поділяють на три категорії:
+
+1. **Породжувальні** (creational) — як створювати об'єкти.
+2. **Структурні** (structural) — як компонувати класи й об'єкти.
+3. **Поведінкові** (behavioral) — як об'єкти взаємодіють.
 `
     },
     {
-      title: "2. Zasada S — Single Responsibility Principle (SRP)",
+      title: "2. S — Single Responsibility Principle (SRP)",
       content: `
-> **Klasa powinna mieć tylko jeden powód do zmiany.**
+> **Клас повинен мати лише одну причину для зміни.**
 
-Oznacza to, że każda klasa powinna być odpowiedzialna za **jedną, dobrze zdefiniowaną rzecz**. Jeśli klasa zarządza użytkownikami, generuje raporty i wysyła emaile — ma trzy powody do zmiany i łamie SRP.
+Кожен клас відповідає за **одну, чітко визначену річ**. Якщо клас керує користувачами, генерує звіти й надсилає листи, у нього три причини для змін, і SRP порушено.
 
-### ❌ Złamanie SRP:
+### ❌ Порушення SRP
+
 \`\`\`java
 public class UserService {
     public void registerUser(String name, String email) {
-        // 1. Walidacja danych
-        if (name.isBlank()) throw new IllegalArgumentException("Puste imię");
-        // 2. Zapis do bazy danych
+        // 1. Валідація
+        if (name.isBlank()) throw new IllegalArgumentException("Порожнє ім'я");
+        // 2. Збереження в БД
         database.save(new User(name, email));
-        // 3. Wysłanie emaila powitalnego
-        emailClient.send(email, "Witamy!", "Cześć " + name);
-        // 4. Logowanie zdarzenia
-        logger.info("Zarejestrowano: " + email);
+        // 3. Вітальний лист
+        emailClient.send(email, "Вітаємо!", "Привіт, " + name);
+        // 4. Логування
+        logger.info("Зареєстровано: " + email);
     }
 }
 \`\`\`
-Ta klasa ma **cztery powody do zmiany**: zmiana walidacji, zmiana bazy danych, zmiana systemu email, zmiana logowania.
 
-### ✅ Zgodne z SRP:
+У цього класу **чотири причини для зміни**: валідація, база даних, пошта, логування.
+
+### ✅ Відповідно до SRP
+
 \`\`\`java
 public class UserValidator {
     public void validate(String name, String email) { /* ... */ }
@@ -67,8 +74,8 @@ public class UserRegistrationService {
     private final WelcomeEmailSender emailSender;
 
     public UserRegistrationService(UserValidator validator,
-                                    UserRepository repository,
-                                    WelcomeEmailSender emailSender) {
+                                   UserRepository repository,
+                                   WelcomeEmailSender emailSender) {
         this.validator = validator;
         this.repository = repository;
         this.emailSender = emailSender;
@@ -81,17 +88,19 @@ public class UserRegistrationService {
     }
 }
 \`\`\`
-Teraz każda klasa ma **dokładnie jeden powód do zmiany**. \`UserRegistrationService\` jedynie koordynuje przepływ, delegując szczegóły do specjalistów.
+
+Тепер кожен клас має **рівно одну причину для зміни**, а \`UserRegistrationService\` лише координує процес і делегує деталі «спеціалістам».
 `
     },
     {
-      title: "3. Zasada O — Open/Closed Principle (OCP)",
+      title: "3. O — Open/Closed Principle (OCP)",
       content: `
-> **Klasy powinny być otwarte na rozszerzanie, ale zamknięte na modyfikację.**
+> **Класи мають бути відкриті для розширення, але закриті для модифікації.**
 
-Oznacza to, że powinno być możliwe dodanie nowej funkcjonalności **bez zmieniania istniejącego, przetestowanego kodu**. Osiąga się to przez abstrakcję (interfejsy) i polimorfizm.
+Нову функціональність має бути можливо додати **без зміни наявного, протестованого коду**. Досягається це абстракцією (інтерфейси) і поліморфізмом.
 
-### ❌ Złamanie OCP:
+### ❌ Порушення OCP
+
 \`\`\`java
 public class DiscountCalculator {
     public double calculate(String customerType, double price) {
@@ -99,34 +108,31 @@ public class DiscountCalculator {
             case "REGULAR" -> price * 0.95;
             case "VIP" -> price * 0.80;
             case "EMPLOYEE" -> price * 0.70;
-            // Dodanie nowego typu = modyfikacja tego kodu!
+            // новий тип клієнта = зміна цього коду!
             default -> price;
         };
     }
 }
 \`\`\`
-Każdy nowy typ klienta wymaga modyfikacji istniejącej klasy.
 
-### ✅ Zgodne z OCP:
+### ✅ Відповідно до OCP
+
 \`\`\`java
 public interface DiscountStrategy {
     double apply(double price);
 }
 
 public class RegularDiscount implements DiscountStrategy {
-    @Override
-    public double apply(double price) { return price * 0.95; }
+    @Override public double apply(double price) { return price * 0.95; }
 }
 
 public class VipDiscount implements DiscountStrategy {
-    @Override
-    public double apply(double price) { return price * 0.80; }
+    @Override public double apply(double price) { return price * 0.80; }
 }
 
-// Dodanie nowego typu = nowa klasa, BEZ modyfikacji istniejących!
+// новий тип = новий клас, БЕЗ зміни наявних
 public class StudentDiscount implements DiscountStrategy {
-    @Override
-    public double apply(double price) { return price * 0.90; }
+    @Override public double apply(double price) { return price * 0.90; }
 }
 
 public class DiscountCalculator {
@@ -135,17 +141,20 @@ public class DiscountCalculator {
     }
 }
 \`\`\`
-Teraz dodanie nowego rabatu wymaga jedynie utworzenia nowej klasy implementującej \`DiscountStrategy\`.
+
+> [!NOTE]
+> OCP не означає «ніколи не пишіть switch». Switch за sealed-ієрархією (лекція 08) — нормальне рішення, коли набір варіантів закритий і стабільний, а операцій над ним багато.
 `
     },
     {
-      title: "4. Zasada L — Liskov Substitution Principle (LSP)",
+      title: "4. L — Liskov Substitution Principle (LSP)",
       content: `
-> **Obiekty klasy bazowej powinny być zastępowalne obiektami klas pochodnych bez zmiany poprawności programu.**
+> **Об'єкти базового класу мають бути замінні об'єктами підкласів без порушення коректності програми.**
 
-Innymi słowy: jeśli metoda przyjmuje parametr typu \`Animal\`, to powinno działać poprawnie niezależnie od tego, czy przekażemy \`Dog\`, \`Cat\` czy \`Parrot\`.
+Якщо метод приймає \`Animal\`, він має коректно працювати і з \`Dog\`, і з \`Cat\`, і з \`Parrot\`.
 
-### ❌ Klasyczny przykład złamania LSP — Kwadrat i Prostokąt:
+### ❌ Класичне порушення: квадрат і прямокутник
+
 \`\`\`java
 public class Rectangle {
     protected int width, height;
@@ -155,23 +164,21 @@ public class Rectangle {
 }
 
 public class Square extends Rectangle {
-    @Override
-    public void setWidth(int w) { this.width = w; this.height = w; }
-    @Override
-    public void setHeight(int h) { this.width = h; this.height = h; }
+    @Override public void setWidth(int w) { this.width = w; this.height = w; }
+    @Override public void setHeight(int h) { this.width = h; this.height = h; }
 }
-\`\`\`
-\`\`\`java
+
 void resize(Rectangle r) {
     r.setWidth(5);
     r.setHeight(10);
-    assert r.getArea() == 50; // ❌ FAILS dla Square! (area = 100)
+    assert r.getArea() == 50;   // ❌ для Square площа 100
 }
 \`\`\`
-\`Square\` zmienia zachowanie \`setWidth\`/\`setHeight\` w sposób nieoczekiwany dla kodu, który operuje na \`Rectangle\`.
 
-### ✅ Poprawne podejście:
-Zamiast dziedziczenia, użyj osobnych klas lub wspólnego interfejsu \`Shape\`:
+\`Square\` змінює поведінку \`setWidth\`/\`setHeight\` так, як код, що працює з \`Rectangle\`, не очікує.
+
+### ✅ Правильний підхід
+
 \`\`\`java
 public interface Shape {
     int getArea();
@@ -185,17 +192,22 @@ public record Square(int side) implements Shape {
     public int getArea() { return side * side; }
 }
 \`\`\`
-Teraz \`Rectangle\` i \`Square\` to równorzędne implementacje \`Shape\`, a nie relacja dziedziczenia.
+
+Тепер це рівноправні реалізації \`Shape\`, а не наслідування.
+
+> [!TIP]
+> Ознаки порушення LSP: підклас кидає \`UnsupportedOperationException\` у методі батька, посилює передумови (вимагає більше, ніж батько) або послаблює гарантії результату.
 `
     },
     {
-      title: "5. Zasada I — Interface Segregation Principle (ISP)",
+      title: "5. I — Interface Segregation Principle (ISP)",
       content: `
-> **Klienty nie powinny być zmuszane do zależności od metod, których nie używają.**
+> **Клієнти не повинні залежати від методів, якими вони не користуються.**
 
-Lepiej mieć wiele małych, wyspecjalizowanych interfejsów niż jeden duży, "gruby" interfejs.
+Краще багато маленьких спеціалізованих інтерфейсів, ніж один великий «товстий».
 
-### ❌ Złamanie ISP — "Gruby" interfejs:
+### ❌ Порушення ISP
+
 \`\`\`java
 public interface MultiFunctionPrinter {
     void print(Document doc);
@@ -203,9 +215,7 @@ public interface MultiFunctionPrinter {
     void fax(Document doc);
     void staple(Document doc);
 }
-\`\`\`
-Prosta drukarka musi implementować \`scan()\`, \`fax()\`, \`staple()\`, choć ich nie obsługuje:
-\`\`\`java
+
 public class BasicPrinter implements MultiFunctionPrinter {
     public void print(Document doc) { /* OK */ }
     public void scan(Document doc) { throw new UnsupportedOperationException(); }
@@ -214,11 +224,12 @@ public class BasicPrinter implements MultiFunctionPrinter {
 }
 \`\`\`
 
-### ✅ Zgodne z ISP:
+### ✅ Відповідно до ISP
+
 \`\`\`java
-public interface Printable    { void print(Document doc); }
-public interface Scannable    { void scan(Document doc); }
-public interface Faxable      { void fax(Document doc); }
+public interface Printable { void print(Document doc); }
+public interface Scannable { void scan(Document doc); }
+public interface Faxable   { void fax(Document doc); }
 
 public class BasicPrinter implements Printable {
     public void print(Document doc) { /* OK */ }
@@ -230,17 +241,17 @@ public class OfficePrinter implements Printable, Scannable, Faxable {
     public void fax(Document doc) { /* ... */ }
 }
 \`\`\`
-Teraz każda klasa implementuje tylko te interfejsy, które faktycznie obsługuje.
 `
     },
     {
-      title: "6. Zasada D — Dependency Inversion Principle (DIP)",
+      title: "6. D — Dependency Inversion Principle (DIP) і Dependency Injection",
       content: `
-> **Moduły wysokiego poziomu nie powinny zależeć od modułów niskiego poziomu. Oba powinny zależeć od abstrakcji.**
+> **Модулі вищого рівня не повинні залежати від модулів нижчого рівня. І ті, й інші мають залежати від абстракцій.**
 
-To najważniejsza zasada przed nauką Springa, ponieważ jest ona fundamentem **Dependency Injection (DI)**.
+Це найважливіший принцип перед вивченням Spring, бо на ньому побудовано **Dependency Injection (DI)**.
 
-### ❌ Złamanie DIP — bezpośrednia zależność:
+### ❌ Порушення DIP
+
 \`\`\`java
 public class OrderService {
     private final MySqlOrderRepository repository = new MySqlOrderRepository();
@@ -250,29 +261,28 @@ public class OrderService {
     }
 }
 \`\`\`
-\`OrderService\` jest na stałe "przybity" do \`MySqlOrderRepository\`. Aby zmienić bazę danych na PostgreSQL, trzeba modyfikować \`OrderService\`.
 
-### ✅ Zgodne z DIP — zależność od abstrakcji:
+\`OrderService\` намертво прив'язаний до MySQL. Щоб перейти на PostgreSQL або протестувати сервіс без бази, доведеться змінювати сам сервіс.
+
+### ✅ Відповідно до DIP
+
 \`\`\`java
 public interface OrderRepository {
     void save(Order order);
 }
 
 public class MySqlOrderRepository implements OrderRepository {
-    @Override
-    public void save(Order order) { /* Zapis do MySQL */ }
+    @Override public void save(Order order) { /* MySQL */ }
 }
 
 public class PostgresOrderRepository implements OrderRepository {
-    @Override
-    public void save(Order order) { /* Zapis do PostgreSQL */ }
+    @Override public void save(Order order) { /* PostgreSQL */ }
 }
 
 public class OrderService {
-    private final OrderRepository repository; // Zależy od INTERFEJSU
+    private final OrderRepository repository;     // залежить від ІНТЕРФЕЙСУ
 
-    // Dependency Injection przez konstruktor!
-    public OrderService(OrderRepository repository) {
+    public OrderService(OrderRepository repository) {   // впровадження через конструктор
         this.repository = repository;
     }
 
@@ -280,205 +290,188 @@ public class OrderService {
         repository.save(order);
     }
 }
-\`\`\`
-\`\`\`java
-// Wybór implementacji dokonywany jest NA ZEWNĄTRZ klasy:
+
+// реалізацію обирають ЗЗОВНІ:
 OrderService service = new OrderService(new PostgresOrderRepository());
 \`\`\`
 
-### Dependency Injection (DI) — klucz do Springa
-**DI to technika realizacji DIP**, w której obiekt **nie tworzy swoich zależności sam** (przez \`new\`), ale **otrzymuje je z zewnątrz** — przez konstruktor, setter lub pole.
+### Dependency Injection
 
-Trzy formy DI:
+**DI — техніка реалізації DIP**: об'єкт **не створює залежності сам** (через \`new\`), а **отримує їх ззовні**.
+
 \`\`\`java
-// 1. Przez konstruktor (REKOMENDOWANE)
+// 1. Через конструктор (РЕКОМЕНДОВАНО: залежності явні, поля можуть бути final)
 public OrderService(OrderRepository repo) { this.repository = repo; }
 
-// 2. Przez setter
+// 2. Через setter (для необов'язкових залежностей)
 public void setRepository(OrderRepository repo) { this.repository = repo; }
 
-// 3. Przez pole (w Springu: @Autowired)
+// 3. Через поле (у Spring: @Autowired; ускладнює тести)
 @Autowired
 private OrderRepository repository;
 \`\`\`
 
-W Springu rolę "dostawcy zależności" pełni **kontener IoC (Inversion of Control)**. Programista jedynie deklaruje, czego potrzebuje (\`@Autowired\`), a Spring sam tworzy obiekty i "wstrzykuje" je w odpowiednie miejsca.
+У Spring постачальником залежностей виступає **IoC-контейнер (Inversion of Control)**: програміст лише оголошує, що йому потрібно, а контейнер створює об'єкти й «впроваджує» їх. Аналог у .NET — \`IServiceCollection\` / \`Microsoft.Extensions.DependencyInjection\`.
 `
     },
     {
-      title: "7. Wzorce Kreacyjne: Singleton",
+      title: "7. Породжувальні патерни: Singleton",
       content: `
-> **Singleton gwarantuje, że klasa ma dokładnie jedną instancję i zapewnia globalny punkt dostępu do niej.**
+> **Singleton гарантує, що клас має рівно один екземпляр, і надає глобальну точку доступу до нього.**
 
-Jest to najczęściej spotykany (i najczęściej nadużywany) wzorzec. W Springu **domyślnie każdy bean jest Singletonem**.
+Це найвідоміший (і найчастіше зловживаний) патерн. У Spring **кожен bean за замовчуванням — singleton** (у межах контейнера).
 
-### Implementacja (thread-safe — enum):
-Najprostsza i najlepsza implementacja Singletona w Javie to użycie enuma:
+### Найкраща реалізація в Java — enum
+
 \`\`\`java
 public enum AppConfig {
     INSTANCE;
 
-    private String databaseUrl = "jdbc:mysql://localhost:3306/mydb";
+    private String databaseUrl = "jdbc:postgresql://localhost:5432/shop";
 
     public String getDatabaseUrl() { return databaseUrl; }
 }
 
-// Użycie:
 String url = AppConfig.INSTANCE.getDatabaseUrl();
 \`\`\`
-JVM gwarantuje, że enum zostanie zainicjowany dokładnie raz, jest thread-safe i odporny na serializację.
 
-### Implementacja klasyczna (lazy, thread-safe):
+JVM гарантує одноразову потокобезпечну ініціалізацію enum, а сам enum стійкий до серіалізації й рефлексії.
+
+### Ліниво і потокобезпечно: holder idiom
+
 \`\`\`java
-public class AppConfig {
-    private static volatile AppConfig instance;
+public final class AppConfig {
+    private AppConfig() { }                       // приватний конструктор
 
-    private AppConfig() {} // Prywatny konstruktor!
-
-    public static AppConfig getInstance() {
-        if (instance == null) {
-            synchronized (AppConfig.class) {
-                if (instance == null) {
-                    instance = new AppConfig();
-                }
-            }
-        }
-        return instance;
+    private static final class Holder {           // завантажиться при першому getInstance()
+        static final AppConfig INSTANCE = new AppConfig();
     }
+
+    public static AppConfig getInstance() { return Holder.INSTANCE; }
 }
 \`\`\`
 
+Класичний варіант — *double-checked locking* з \`volatile\`-полем. Він теж коректний, але складніший.
+
 > [!WARNING]
-> Singleton utrudnia testowanie jednostkowe (globalna, współdzielona instancja). Dlatego we frameworkach takich jak Spring preferuje się DI zamiast ręcznego wywoływania \`getInstance()\` — kontener zarządza cyklem życia obiektów.
+> Singleton — це прихований глобальний стан: він ускладнює тестування (екземпляр не підміниш) і приховує залежності. Тому у фреймворках віддають перевагу DI: контейнер сам гарантує єдиний екземпляр, а клас про це навіть не знає.
 `
     },
     {
-      title: "8. Wzorce Kreacyjne: Factory Method i Builder",
+      title: "8. Породжувальні патерни: Factory Method і Builder",
       content: `
 ### Factory Method
-> **Definiuje interfejs tworzenia obiektu, ale pozwala podklasom zdecydować, która klasa zostanie utworzona.**
+
+> **Визначає інтерфейс для створення об'єкта, а рішення, який клас створити, приймає окремий метод (або підклас).**
 
 \`\`\`java
-public interface Notification {
-    void send(String message);
-}
+public interface Notification { void send(String message); }
 
 public class EmailNotification implements Notification {
     public void send(String message) { System.out.println("Email: " + message); }
 }
-
 public class SmsNotification implements Notification {
     public void send(String message) { System.out.println("SMS: " + message); }
 }
-
 public class PushNotification implements Notification {
     public void send(String message) { System.out.println("Push: " + message); }
 }
 
-// FACTORY — logika tworzenia w jednym miejscu
-public class NotificationFactory {
+public final class NotificationFactory {
     public static Notification create(String channel) {
         return switch (channel.toLowerCase()) {
             case "email" -> new EmailNotification();
             case "sms"   -> new SmsNotification();
             case "push"  -> new PushNotification();
-            default -> throw new IllegalArgumentException(
-                           "Nieznany kanał: " + channel);
+            default -> throw new IllegalArgumentException("Невідомий канал: " + channel);
         };
     }
 }
 
-// Użycie:
 Notification n = NotificationFactory.create("email");
-n.send("Witamy!");
+n.send("Вітаємо!");
 \`\`\`
-Kod kliencki nie zna konkretnych klas — operuje na interfejsie \`Notification\`.
+
+Клієнтський код не знає конкретних класів, він працює з інтерфейсом \`Notification\`. Фабрики в JDK: \`List.of\`, \`Path.of\`, \`Executors.newFixedThreadPool\`, \`HttpClient.newHttpClient\`.
 
 ---
 
 ### Builder
-> **Pozwala konstruować złożone obiekty krok po kroku, oddzielając proces konstrukcji od reprezentacji.**
 
-Builder jest idealny, gdy konstruktor miałby zbyt wiele parametrów:
+> **Дозволяє будувати складні об'єкти крок за кроком, відокремлюючи процес побудови від представлення.**
+
+Builder особливо корисний у Java, де **немає іменованих параметрів і значень за замовчуванням**:
+
 \`\`\`java
-public class HttpRequest {
+public final class HttpRequestSpec {
     private final String url;
     private final String method;
     private final Map<String, String> headers;
     private final String body;
-    private final int timeout;
+    private final int timeoutMs;
 
-    private HttpRequest(Builder builder) {
-        this.url = builder.url;
-        this.method = builder.method;
-        this.headers = builder.headers;
-        this.body = builder.body;
-        this.timeout = builder.timeout;
+    private HttpRequestSpec(Builder b) {
+        this.url = b.url;
+        this.method = b.method;
+        this.headers = Map.copyOf(b.headers);
+        this.body = b.body;
+        this.timeoutMs = b.timeoutMs;
     }
 
-    public static class Builder {
-        private final String url;       // Wymagane
-        private String method = "GET";  // Domyślne
-        private Map<String, String> headers = new HashMap<>();
+    public static Builder builder(String url) { return new Builder(url); }
+
+    public static final class Builder {
+        private final String url;                       // обов'язкове
+        private String method = "GET";                  // значення за замовчуванням
+        private final Map<String, String> headers = new HashMap<>();
         private String body = "";
-        private int timeout = 30_000;
+        private int timeoutMs = 30_000;
 
-        public Builder(String url) { this.url = url; }
+        private Builder(String url) { this.url = Objects.requireNonNull(url); }
 
-        public Builder method(String method) {
-            this.method = method; return this;
+        public Builder method(String m)              { this.method = m; return this; }
+        public Builder header(String k, String v)    { headers.put(k, v); return this; }
+        public Builder body(String b)                { this.body = b; return this; }
+        public Builder timeoutMs(int ms)             { this.timeoutMs = ms; return this; }
+
+        public HttpRequestSpec build() {
+            if (method.equals("GET") && !body.isEmpty())
+                throw new IllegalStateException("GET не може мати тіла");
+            return new HttpRequestSpec(this);
         }
-        public Builder header(String key, String value) {
-            this.headers.put(key, value); return this;
-        }
-        public Builder body(String body) {
-            this.body = body; return this;
-        }
-        public Builder timeout(int ms) {
-            this.timeout = ms; return this;
-        }
-        public HttpRequest build() { return new HttpRequest(this); }
     }
 }
 
-// Użycie — czytelna, płynna składnia:
-HttpRequest request = new HttpRequest.Builder("https://api.example.com/users")
-    .method("POST")
-    .header("Content-Type", "application/json")
-    .body("{\\"name\\": \\"Jan\\"}")
-    .timeout(5000)
-    .build();
+HttpRequestSpec req = HttpRequestSpec.builder("https://api.example.com/users")
+        .method("POST")
+        .header("Content-Type", "application/json")
+        .body("{\\"name\\": \\"Ян\\"}")
+        .timeoutMs(5000)
+        .build();
 \`\`\`
 
 > [!TIP]
-> Biblioteka **Lombok** (z Wykładu 14) potrafi wygenerować Builder automatycznie za pomocą adnotacji \`@Builder\` nad klasą.
+> Бібліотека **Lombok** генерує builder анотацією \`@Builder\` (процесор анотацій, лекція 14). У JDK так влаштовані \`HttpRequest.newBuilder()\`, \`Thread.ofVirtual()\` і \`StringBuilder\`.
 `
     },
     {
-      title: "9. Wzorce Strukturalne: Adapter i Decorator",
+      title: "9. Структурні патерни: Adapter і Decorator",
       content: `
 ### Adapter
-> **Przekształca interfejs jednej klasy na interfejs oczekiwany przez klienta. Pozwala współpracować klasom, które normalnie nie mogłyby ze sobą działać.**
 
-Wyobraź sobie, że masz stary system logowania, który używa interfejsu \`OldLogger\`, ale twój nowy kod wymaga \`NewLogger\`:
+> **Перетворює інтерфейс одного класу на інтерфейс, який очікує клієнт.**
+
 \`\`\`java
-// Stary interfejs (np. z zewnętrznej biblioteki)
-public interface OldLogger {
-    void writeLog(String text);
-}
+// старий інтерфейс (наприклад, зі сторонньої бібліотеки)
+public interface OldLogger { void writeLog(String text); }
 
-// Nowy interfejs (wymagany przez Twój kod)
-public interface NewLogger {
-    void log(Level level, String message);
-}
+// новий інтерфейс, якого вимагає ваш код
+public interface NewLogger { void log(Level level, String message); }
 
-// ADAPTER — most między starym a nowym
 public class LoggerAdapter implements NewLogger {
     private final OldLogger oldLogger;
 
-    public LoggerAdapter(OldLogger oldLogger) {
-        this.oldLogger = oldLogger;
-    }
+    public LoggerAdapter(OldLogger oldLogger) { this.oldLogger = oldLogger; }
 
     @Override
     public void log(Level level, String message) {
@@ -486,12 +479,14 @@ public class LoggerAdapter implements NewLogger {
     }
 }
 \`\`\`
-Adapter jest powszechnie używany w Javie — np. \`Arrays.asList()\` adaptuje tablicę na interfejs \`List\`.
+
+Адаптери в JDK: \`Arrays.asList()\` (масив → \`List\`), \`InputStreamReader\` (байти → символи).
 
 ---
 
 ### Decorator
-> **Dynamicznie dodaje nowe zachowanie do obiektu, opakowując go w inny obiekt o tym samym interfejsie.**
+
+> **Динамічно додає об'єкту нову поведінку, обгортаючи його іншим об'єктом з тим самим інтерфейсом.**
 
 \`\`\`java
 public interface DataSource {
@@ -500,325 +495,243 @@ public interface DataSource {
 }
 
 public class FileDataSource implements DataSource {
-    private final String filename;
-    public FileDataSource(String filename) { this.filename = filename; }
-    public void writeData(String data) { /* Zapis do pliku */ }
-    public String readData() { /* Odczyt z pliku */ return "dane"; }
+    private final Path file;
+    public FileDataSource(Path file) { this.file = file; }
+    public void writeData(String data) { /* запис у файл */ }
+    public String readData() { /* читання з файлу */ return "дані"; }
 }
 
-// DECORATOR — dodaje szyfrowanie
 public class EncryptionDecorator implements DataSource {
     private final DataSource wrapped;
 
-    public EncryptionDecorator(DataSource source) {
-        this.wrapped = source;
-    }
+    public EncryptionDecorator(DataSource wrapped) { this.wrapped = wrapped; }
 
-    @Override
-    public void writeData(String data) {
-        wrapped.writeData(encrypt(data)); // Dodatkowe zachowanie
-    }
+    @Override public void writeData(String data) { wrapped.writeData(encrypt(data)); }
+    @Override public String readData() { return decrypt(wrapped.readData()); }
 
-    @Override
-    public String readData() {
-        return decrypt(wrapped.readData()); // Dodatkowe zachowanie
-    }
-
-    private String encrypt(String data) { return Base64.getEncoder().encodeToString(data.getBytes()); }
-    private String decrypt(String data) { return new String(Base64.getDecoder().decode(data)); }
+    private String encrypt(String s) { return Base64.getEncoder().encodeToString(s.getBytes()); }
+    private String decrypt(String s) { return new String(Base64.getDecoder().decode(s)); }
 }
-\`\`\`
-\`\`\`java
-// Dekoratory można "zagnieżdżać" (nakładać warstwami):
+
+// декоратори нашаровуються:
 DataSource source = new EncryptionDecorator(
                         new CompressionDecorator(
-                            new FileDataSource("secret.txt")));
-source.writeData("Bardzo ważne dane");
+                            new FileDataSource(Path.of("secret.txt"))));
+source.writeData("Дуже важливі дані");
 \`\`\`
 
-W Javie Decorator jest wszechobecny w strumieniach I/O:
-\`BufferedReader(new InputStreamReader(new FileInputStream("plik.txt")))\`
+У Java декоратори всюди в I/O: \`new BufferedReader(new InputStreamReader(new FileInputStream("f.txt")))\` (лекція 06).
 `
     },
     {
-      title: "10. Wzorce Strukturalne: Proxy",
+      title: "10. Структурні патерни: Proxy",
       content: `
-> **Proxy dostarcza obiekt zastępczy, kontrolujący dostęp do innego obiektu.**
+> **Proxy надає об'єкт-замісник, який контролює доступ до іншого об'єкта.**
 
-Proxy wygląda identycznie jak oryginalny obiekt (implementuje ten sam interfejs), ale dodaje dodatkową logikę "przed" lub "po" wywołaniu metody.
+Proxy виглядає так само, як оригінал (реалізує той самий інтерфейс), але додає логіку «до» або «після» виклику.
 
 \`\`\`java
-public interface ImageLoader {
-    void display();
-}
+public interface Image { void display(); }
 
-public class RealImage implements ImageLoader {
+public class RealImage implements Image {
     private final String filename;
 
     public RealImage(String filename) {
         this.filename = filename;
-        loadFromDisk(); // Kosztowna operacja!
+        loadFromDisk();                 // дорога операція!
     }
-
-    private void loadFromDisk() {
-        System.out.println("Ładowanie obrazu: " + filename);
-    }
-
-    public void display() {
-        System.out.println("Wyświetlanie: " + filename);
-    }
+    private void loadFromDisk() { System.out.println("Завантаження: " + filename); }
+    public void display() { System.out.println("Показ: " + filename); }
 }
 
-// PROXY — ładuje obraz dopiero przy pierwszym użyciu (lazy loading)
-public class LazyImageProxy implements ImageLoader {
+// ліниве завантаження
+public class LazyImageProxy implements Image {
     private final String filename;
-    private RealImage realImage; // null dopóki nie jest potrzebny
+    private RealImage real;             // null, доки не знадобиться
 
-    public LazyImageProxy(String filename) {
-        this.filename = filename;
-        // NIE ładujemy obrazu w konstruktorze!
-    }
+    public LazyImageProxy(String filename) { this.filename = filename; }
 
     @Override
     public void display() {
-        if (realImage == null) {
-            realImage = new RealImage(filename); // Lazy initialization
-        }
-        realImage.display();
+        if (real == null) real = new RealImage(filename);
+        real.display();
     }
 }
 \`\`\`
 
-### Rodzaje Proxy:
-* **Lazy Proxy** — opóźnia kosztowną inicjalizację (jak powyżej).
-* **Logging Proxy** — loguje każde wywołanie metody.
-* **Access Proxy** — sprawdza uprawnienia przed wywołaniem.
-* **Caching Proxy** — zapamiętuje wyniki wcześniejszych wywołań.
+### Різновиди proxy
+
+* **Lazy** — відкладає дорогу ініціалізацію.
+* **Logging** — логує кожен виклик.
+* **Protection** — перевіряє права перед викликом.
+* **Caching** — запам'ятовує результати.
+* **Remote** — приховує мережевий виклик (RMI, gRPC-стаби).
 
 > [!IMPORTANT]
-> **Spring AOP (Aspect-Oriented Programming)** jest w całości oparty na wzorcu Proxy. Gdy dodajesz \`@Transactional\` do metody, Spring automatycznie tworzy obiekt Proxy, który otwiera transakcję PRZED wywołaniem i commituje ją PO wywołaniu. Zrozumienie tego wzorca jest kluczowe dla zrozumienia "magii" Springa.
+> **Spring AOP** повністю побудований на proxy (динамічні проксі з лекції 07). Коли ви ставите \`@Transactional\` на метод, Spring обгортає bean проксі, який відкриває транзакцію ДО виклику і робить commit/rollback ПІСЛЯ. Звідси відома пастка: виклик \`this.otherMethod()\` всередині того самого класу проходить повз проксі, і анотація не спрацює.
+
+Decorator і Proxy структурно однакові, але різні за наміром: декоратор **додає функціональність**, а proxy **керує доступом** до об'єкта.
 `
     },
     {
-      title: "11. Wzorce Behawioralne: Strategy",
+      title: "11. Поведінкові патерни: Strategy",
       content: `
-> **Strategy definiuje rodzinę algorytmów, hermetyzuje każdy z nich i umożliwia ich wymianę.**
+> **Strategy визначає сімейство алгоритмів, інкапсулює кожен з них і робить їх взаємозамінними.**
 
-Ten wzorzec już widzieliśmy przy zasadzie OCP! Wydzielamy algorytm do osobnego interfejsu i przekazujemy go jako zależność.
+Ми вже бачили цей патерн у розділі про OCP: алгоритм виноситься в окремий інтерфейс і передається як залежність.
 
 \`\`\`java
-public interface SortStrategy {
-    <T extends Comparable<T>> void sort(List<T> list);
+public interface ShippingCost {
+    BigDecimal calculate(Order order);
 }
 
-public class BubbleSortStrategy implements SortStrategy {
-    @Override
-    public <T extends Comparable<T>> void sort(List<T> list) {
-        System.out.println("Sortowanie bąbelkowe...");
-        // Implementacja bubble sort
-    }
+public class FlatRate implements ShippingCost {
+    public BigDecimal calculate(Order o) { return new BigDecimal("15.00"); }
 }
 
-public class QuickSortStrategy implements SortStrategy {
-    @Override
-    public <T extends Comparable<T>> void sort(List<T> list) {
-        System.out.println("Sortowanie szybkie...");
-        Collections.sort(list); // Uproszczone
+public class ByWeight implements ShippingCost {
+    public BigDecimal calculate(Order o) {
+        return BigDecimal.valueOf(o.totalWeightKg()).multiply(new BigDecimal("2.50"));
     }
 }
 
-// Kontekst — używa strategii, nie wiedząc, jaka to implementacja
-public class DataProcessor {
-    private SortStrategy strategy;
-
-    public DataProcessor(SortStrategy strategy) {
-        this.strategy = strategy;
-    }
-
-    // Możliwość zmiany strategii w runtime!
-    public void setStrategy(SortStrategy strategy) {
-        this.strategy = strategy;
-    }
-
-    public void process(List<String> data) {
-        strategy.sort(data);
-        data.forEach(System.out::println);
-    }
+public class Checkout {
+    private ShippingCost shipping;
+    public Checkout(ShippingCost shipping) { this.shipping = shipping; }
+    public void setShipping(ShippingCost s) { this.shipping = s; }   // заміна під час виконання
+    public BigDecimal total(Order o) { return o.subtotal().add(shipping.calculate(o)); }
 }
 \`\`\`
 
-> [!TIP]
-> W Javie od wersji 8+ Strategy jest naturalnie wyrażany przez **interfejsy funkcyjne i lambdy**. Zamiast tworzyć oddzielne klasy, można po prostu przekazać lambdę:
-> \`\`\`java
-> // Comparator to Strategy!
-> list.sort((a, b) -> a.length() - b.length());
-> list.sort(Comparator.comparing(String::length));
-> \`\`\`
+### Strategy з лямбдами
+
+З Java 8 стратегія — це часто просто **функціональний інтерфейс**, і окремі класи не потрібні:
+
+\`\`\`java
+Checkout c = new Checkout(order -> BigDecimal.ZERO);          // безкоштовна доставка
+list.sort(Comparator.comparing(String::length));               // Comparator — це стратегія
+words.removeIf(w -> w.length() < 3);                            // Predicate — теж
+\`\`\`
 `
     },
     {
-      title: "12. Wzorce Behawioralne: Observer",
+      title: "12. Поведінкові патерни: Observer",
       content: `
-> **Observer definiuje mechanizm subskrypcji, pozwalając obiektom automatycznie reagować na zmiany stanu innego obiektu.**
+> **Observer визначає механізм підписки: об'єкти автоматично реагують на зміни стану іншого об'єкта.**
 
-Używany wszędzie tam, gdzie istnieje relacja "jeden-do-wielu" (np. system zdarzeń, powiadomienia, GUI).
+Використовується скрізь, де є зв'язок «один до багатьох»: системи подій, сповіщення, GUI. Детально — в лекції 04 (події).
 
 \`\`\`java
-// Interfejs obserwatora
 public interface EventListener {
     void onEvent(String eventType, String data);
 }
 
-// Menedżer subskrypcji (Publisher)
 public class EventManager {
     private final Map<String, List<EventListener>> listeners = new HashMap<>();
 
-    public void subscribe(String eventType, EventListener listener) {
-        listeners.computeIfAbsent(eventType, k -> new ArrayList<>()).add(listener);
+    public void subscribe(String type, EventListener l) {
+        listeners.computeIfAbsent(type, k -> new ArrayList<>()).add(l);
     }
 
-    public void unsubscribe(String eventType, EventListener listener) {
-        listeners.getOrDefault(eventType, List.of()).remove(listener);
+    public void unsubscribe(String type, EventListener l) {
+        listeners.getOrDefault(type, new ArrayList<>()).remove(l);
     }
 
-    public void notify(String eventType, String data) {
-        listeners.getOrDefault(eventType, List.of())
-                 .forEach(listener -> listener.onEvent(eventType, data));
+    public void publish(String type, String data) {
+        listeners.getOrDefault(type, List.of()).forEach(l -> l.onEvent(type, data));
     }
 }
 
-// Konkretni obserwatorzy
-public class EmailAlertListener implements EventListener {
-    @Override
-    public void onEvent(String eventType, String data) {
-        System.out.println("📧 Email: Zdarzenie '" + eventType + "' — " + data);
-    }
-}
-
-public class LoggingListener implements EventListener {
-    @Override
-    public void onEvent(String eventType, String data) {
-        System.out.println("📝 Log: [" + eventType + "] " + data);
-    }
-}
-\`\`\`
-\`\`\`java
-// Użycie:
 EventManager events = new EventManager();
-events.subscribe("user.registered", new EmailAlertListener());
-events.subscribe("user.registered", new LoggingListener());
-events.subscribe("order.placed", new LoggingListener());
-
-// Powiadomienie wszystkich subskrybentów:
-events.notify("user.registered", "jan@example.com");
-// 📧 Email: Zdarzenie 'user.registered' — jan@example.com
-// 📝 Log: [user.registered] jan@example.com
+events.subscribe("user.registered", (t, d) -> System.out.println("📧 Лист: " + d));
+events.subscribe("user.registered", (t, d) -> System.out.println("📝 Лог: [" + t + "] " + d));
+events.publish("user.registered", "jan@example.com");
+// 📧 Лист: jan@example.com
+// 📝 Лог: [user.registered] jan@example.com
 \`\`\`
 
 > [!IMPORTANT]
-> W Springu wzorzec Observer jest realizowany przez mechanizm **ApplicationEvent** i \`@EventListener\`. Kiedy publikujesz zdarzenie (\`applicationEventPublisher.publishEvent(event)\`), Spring automatycznie wywołuje wszystkie metody oznaczone \`@EventListener\`, które nasłuchują na ten typ zdarzenia.
+> У Spring Observer реалізовано через \`ApplicationEventPublisher.publishEvent(event)\` і методи з анотацією \`@EventListener\`.
 `
     },
     {
-      title: "13. Wzorce Behawioralne: Template Method",
+      title: "13. Поведінкові патерни: Template Method",
       content: `
-> **Template Method definiuje szkielet algorytmu w klasie bazowej, pozwalając podklasom nadpisać konkretne kroki bez zmiany ogólnej struktury.**
+> **Template Method задає скелет алгоритму в базовому класі, а підкласи перевизначають окремі кроки, не змінюючи структури.**
 
 \`\`\`java
 public abstract class DataMiner {
 
-    // TEMPLATE METHOD — definiuje szkielet algorytmu
-    // Metoda finalna, nie może być nadpisana!
-    public final void mine(String path) {
-        openFile(path);
-        String rawData = extractData();
-        List<String> parsed = parseData(rawData);
-        analyzeData(parsed);
-        generateReport(parsed);
-        closeFile();
+    // шаблонний метод: final, щоб скелет не змінили
+    public final void mine(Path path) {
+        String raw = read(path);
+        List<String> records = parse(raw);
+        analyze(records);
+        report(records);
     }
 
-    // Kroki wspólne — implementacja w klasie bazowej
-    void generateReport(List<String> data) {
-        System.out.println("Raport: znaleziono " + data.size() + " rekordów.");
+    protected String read(Path path) {                    // спільний крок
+        try { return Files.readString(path); }
+        catch (IOException e) { throw new UncheckedIOException(e); }
     }
 
-    // Kroki abstrakcyjne — MUSZĄ być zaimplementowane przez podklasy
-    protected abstract void openFile(String path);
-    protected abstract String extractData();
-    protected abstract List<String> parseData(String rawData);
-    protected abstract void analyzeData(List<String> data);
-    protected abstract void closeFile();
+    protected void report(List<String> records) {         // крок з реалізацією за замовчуванням
+        System.out.println("Звіт: знайдено " + records.size() + " записів");
+    }
+
+    protected abstract List<String> parse(String raw);    // підклас МУСИТЬ реалізувати
+    protected abstract void analyze(List<String> records);
 }
 
 public class CsvDataMiner extends DataMiner {
-    @Override
-    protected void openFile(String path) { System.out.println("Otwieranie CSV: " + path); }
-    @Override
-    protected String extractData() { return "jan,28\\nmaria,35"; }
-    @Override
-    protected List<String> parseData(String rawData) {
-        return List.of(rawData.split("\\\\n"));
-    }
-    @Override
-    protected void analyzeData(List<String> data) {
-        System.out.println("Analiza " + data.size() + " wierszy CSV...");
-    }
-    @Override
-    protected void closeFile() { System.out.println("Zamknięto CSV."); }
+    @Override protected List<String> parse(String raw) { return raw.lines().skip(1).toList(); }
+    @Override protected void analyze(List<String> r) { System.out.println("Аналіз " + r.size() + " рядків CSV"); }
 }
 
-public class JsonDataMiner extends DataMiner {
-    // ... analogiczna implementacja dla JSON
-}
-\`\`\`
-\`\`\`java
-DataMiner miner = new CsvDataMiner();
-miner.mine("dane.csv");
-// Otwieranie CSV: dane.csv
-// Analiza 2 wierszy CSV...
-// Raport: znaleziono 2 rekordów.
-// Zamknięto CSV.
+new CsvDataMiner().mine(Path.of("data.csv"));
 \`\`\`
 
-Szkielet algorytmu (\`mine()\`) jest taki sam, ale każda podklasa realizuje kroki na swój sposób.
+Приклади в JDK: \`AbstractList\` (реалізуєте \`get\` і \`size\`, решту клас дає сам), \`HttpServlet.service()\` → \`doGet\`/\`doPost\`, \`RecursiveTask.compute()\`.
+
+> [!TIP]
+> Сучасна альтернатива — композиція: передати кроки як функції (Strategy) замість наслідування. Наслідування жорстко зв'язує класи, а композиція гнучкіша.
 `
     },
     {
-      title: "14. Podsumowanie: SOLID + Wzorce — Tabela Referencyjna",
+      title: "14. Підсумок: SOLID і патерни",
       content: `
-### Zasady SOLID — krótki przegląd
+### Принципи SOLID
 
-| Zasada | Akronim | Esencja |
-|--------|---------|---------|
-| Single Responsibility | **S** | Jedna klasa = jeden powód do zmiany |
-| Open/Closed | **O** | Rozszerzaj przez nowe klasy, nie modyfikuj starych |
-| Liskov Substitution | **L** | Podklasa musi działać wszędzie tam, gdzie klasa bazowa |
-| Interface Segregation | **I** | Wiele małych interfejsów > jeden duży |
-| Dependency Inversion | **D** | Zależ od abstrakcji, nie od konkretnych klas |
+| Принцип | Буква | Суть |
+| --- | --- | --- |
+| Single Responsibility | **S** | один клас — одна причина для змін |
+| Open/Closed | **O** | розширюй новими класами, не змінюй старі |
+| Liskov Substitution | **L** | підклас працює всюди, де працює базовий клас |
+| Interface Segregation | **I** | багато малих інтерфейсів краще за один великий |
+| Dependency Inversion | **D** | залежи від абстракцій, а не від конкретних класів |
 
-### Wzorce — krótki przegląd
+### Патерни
 
-| Wzorzec | Kategoria | Kiedy używać | Przykład w Javie/Springu |
-|---------|-----------|--------------|--------------------------|
-| **Singleton** | Kreacyjny | Jedna instancja w całej aplikacji | Spring Bean (domyślny scope) |
-| **Factory Method** | Kreacyjny | Tworzenie obiektów bez ujawniania klasy | \`Calendar.getInstance()\` |
-| **Builder** | Kreacyjny | Obiekt z wieloma opcjonalnymi parametrami | \`StringBuilder\`, Lombok \`@Builder\` |
-| **Adapter** | Strukturalny | Integracja niekompatybilnych interfejsów | \`Arrays.asList()\`, \`InputStreamReader\` |
-| **Decorator** | Strukturalny | Dodawanie zachowań bez zmiany klasy | \`BufferedReader(FileReader)\` |
-| **Proxy** | Strukturalny | Kontrola dostępu, lazy loading, logowanie | Spring AOP, \`@Transactional\` |
-| **Strategy** | Behawioralny | Wymienialny algorytm | \`Comparator\`, \`Predicate\` |
-| **Observer** | Behawioralny | Reagowanie na zdarzenia | Spring \`@EventListener\` |
-| **Template Method** | Behawioralny | Stały szkielet algorytmu, zmienne kroki | \`HttpServlet.doGet()/doPost()\` |
+| Патерн | Категорія | Коли застосовувати | Приклад у Java/Spring |
+| --- | --- | --- | --- |
+| **Singleton** | породжувальний | один екземпляр на застосунок | Spring bean (scope за замовчуванням) |
+| **Factory Method** | породжувальний | створення без розкриття класу | \`List.of()\`, \`Executors.new...\` |
+| **Builder** | породжувальний | багато необов'язкових параметрів | \`HttpRequest.newBuilder()\`, Lombok \`@Builder\` |
+| **Adapter** | структурний | поєднати несумісні інтерфейси | \`Arrays.asList()\`, \`InputStreamReader\` |
+| **Decorator** | структурний | додати поведінку без зміни класу | \`BufferedReader(Reader)\` |
+| **Proxy** | структурний | контроль доступу, лінива ініціалізація, логування | Spring AOP, \`@Transactional\` |
+| **Strategy** | поведінковий | змінний алгоритм | \`Comparator\`, \`Predicate\` |
+| **Observer** | поведінковий | реакція на події | \`@EventListener\`, слухачі GUI |
+| **Template Method** | поведінковий | сталий скелет зі змінними кроками | \`AbstractList\`, \`HttpServlet\` |
 
 > [!TIP]
-> Nie musisz zapamiętywać wszystkich wzorców na raz. Najważniejsze przed Springiem to: **Singleton**, **Factory**, **Proxy**, **Strategy** i **Observer** — oraz zrozumienie zasady **DIP / Dependency Injection**.
+> Не намагайтеся запам'ятати всі патерни одразу. Перед Spring найважливіші **Singleton**, **Factory**, **Proxy**, **Strategy**, **Observer** і принцип **DIP / Dependency Injection**. Як поєднувати патерни на практиці й коли їх НЕ застосовувати — у лекції 21.
 `
     }
   ],
   quiz: [
     {
-      question: "Która zasada SOLID mówi, że klasa powinna mieć tylko jeden powód do zmiany?",
+      question: "Який принцип SOLID говорить, що клас повинен мати лише одну причину для зміни?",
       options: [
         "Open/Closed Principle",
         "Single Responsibility Principle",
@@ -826,51 +739,52 @@ Szkielet algorytmu (\`mine()\`) jest taki sam, ale każda podklasa realizuje kro
         "Dependency Inversion Principle"
       ],
       answer: 1,
-      explanation: "Single Responsibility Principle (SRP) — klasa powinna odpowiadać za jedną, dobrze zdefiniowaną odpowiedzialność. Jeśli klasa ma wiele powodów do zmiany, powinna zostać podzielona."
+      explanation: "SRP: клас відповідає за одну чітко визначену річ. Якщо причин для змін кілька, клас варто розділити."
     },
     {
-      question: "Czym jest Dependency Injection (DI)?",
+      question: "Що таке Dependency Injection?",
       options: [
-        "Techniką tworzenia zależności wewnątrz klasy za pomocą operatora new",
-        "Wzorcem, w którym obiekt NIE tworzy swoich zależności sam, ale otrzymuje je z zewnątrz (np. przez konstruktor)",
-        "Mechanizmem automatycznego usuwania nieużywanych obiektów z pamięci",
-        "Sposobem na ukrycie implementacji za interfejsem"
+        "Створення залежностей усередині класу через new",
+        "Техніка, за якої об'єкт не створює залежності сам, а отримує їх ззовні (наприклад, через конструктор)",
+        "Автоматичне видалення об'єктів з пам'яті",
+        "Приховування реалізації за інтерфейсом"
       ],
       answer: 1,
-      explanation: "DI to technika realizacji zasady DIP (Dependency Inversion Principle). Obiekt deklaruje, czego potrzebuje (przez konstruktor lub adnotację), a kontener (np. Spring) 'wstrzykuje' odpowiednią implementację."
+      explanation: "DI реалізує принцип DIP: клас оголошує, що йому потрібно, а реалізацію постачає код-збирач або контейнер (Spring)."
     },
     {
-      question: "Który wzorzec projektowy jest fundamentem mechanizmu @Transactional w Springu?",
-      options: [
-        "Observer",
-        "Singleton",
-        "Proxy",
-        "Factory Method"
-      ],
+      question: "Який патерн лежить в основі @Transactional у Spring?",
+      options: ["Observer", "Singleton", "Proxy", "Factory Method"],
       answer: 2,
-      explanation: "Spring tworzy obiekt Proxy, który 'owija' oryginalny obiekt i dodaje logikę transakcyjną (otwieranie transakcji przed wywołaniem metody i commitowanie po jej zakończeniu). To klasyczny wzorzec Proxy."
+      explanation: "Spring обгортає bean проксі, який відкриває транзакцію перед викликом методу і завершує її після."
     },
     {
-      question: "Jaka jest różnica między wzorcami Decorator a Proxy?",
+      question: "Чим Decorator відрізняється від Proxy?",
       options: [
-        "Nie ma różnicy, to synonimy",
-        "Decorator dodaje NOWE zachowanie (np. szyfrowanie), a Proxy kontroluje DOSTĘP do istniejącego obiektu (np. lazy loading, autoryzacja)",
-        "Proxy może mieć wiele warstw, a Decorator nie",
-        "Decorator działa tylko z interfejsami, a Proxy z klasami abstrakcyjnymi"
+        "Це синоніми",
+        "Decorator додає нову поведінку, а Proxy контролює доступ до наявного об'єкта (лінива ініціалізація, права, кеш)",
+        "Proxy може мати кілька шарів, а Decorator — ні",
+        "Decorator працює лише з абстрактними класами"
       ],
       answer: 1,
-      explanation: "Choć strukturalnie są podobne (oba opakowują obiekt o tym samym interfejsie), ich intencje się różnią. Decorator wzbogaca funkcjonalność, a Proxy kontroluje lub zarządza cyklem życia obiektu docelowego."
+      explanation: "Структурно вони однакові: обидва обгортають об'єкт з тим самим інтерфейсом. Але наміри різні."
     },
     {
-      question: "Który z poniższych przykładów najlepiej ilustruje wzorzec Strategy w standardowej Javie?",
+      question: "Що в стандартній Java найкраще ілюструє патерн Strategy?",
       options: [
         "System.out.println()",
-        "Comparator<T> przekazywany do metody sort()",
+        "Comparator<T>, переданий у sort()",
         "StringBuilder",
         "HashMap"
       ],
       answer: 1,
-      explanation: "Comparator<T> to klasyczny przykład wzorca Strategy — definiuje algorytm porównywania (strategię) jako obiekt, który można wymieniać. Metoda sort() nie wie, jak porównywać elementy — deleguje to do przekazanej strategii."
+      explanation: "sort() не знає, як порівнювати елементи: цей алгоритм (стратегію) йому передають ззовні, і його можна замінити."
+    },
+    {
+      question: "Square наслідує Rectangle і в setWidth змінює також висоту. Який принцип порушено?",
+      options: ["SRP", "OCP", "LSP", "ISP"],
+      answer: 2,
+      explanation: "Код, розрахований на Rectangle, ламається, якщо отримує Square. Тобто підклас не замінний базовим класом."
     }
   ]
 };

@@ -1,0 +1,129 @@
+import java.io.*;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.*;
+import java.util.*;
+import java.util.concurrent.TimeUnit;
+
+/**
+ * {{checkerTitle}}
+ *
+ *   java CheckWordStats.java            {{allStages}}
+ *   java CheckWordStats.java stage2     {{oneStage}}
+ *
+ * {{checkerHow}}
+ */
+public class CheckWordStats {
+
+    record Result(int exitCode, String out, String err) { }
+
+    static int passed, failed;
+
+    public static void main(String[] args) throws Exception {
+        Set<String> only = new HashSet<>(Arrays.asList(args));
+        if (!Files.exists(Path.of("WordStats.java"))) {
+            System.out.println("{{noFile}}");
+            System.exit(2);
+        }
+        String sample = Files.readString(Path.of("sample.txt"), StandardCharsets.UTF_8);
+
+        if (only.isEmpty() || only.contains("stage2")) {
+            System.out.println("== stage2 ==");
+            expect("sample.txt", run(sample), """
+                    {{lines}}: 3
+                    {{words}}: {{sampleWords}}
+                    {{chars}}: {{sampleChars}}
+                    {{longest}}: {{sampleLongest}}
+                    """);
+            expect("{{emptyInput}}", run(""), """
+                    {{lines}}: 0
+                    {{words}}: 0
+                    {{chars}}: 0
+                    {{longest}}: -
+                    """);
+            expect("{{punctuation}}", run("(hi)   there!\n\"ok\".\n"), """
+                    {{lines}}: 2
+                    {{words}}: 3
+                    {{chars}}: 18
+                    {{longest}}: there
+                    """);
+            expect("{{firstLongest}}", run("abc xyz\nqwe\n"), """
+                    {{lines}}: 2
+                    {{words}}: 3
+                    {{chars}}: 10
+                    {{longest}}: abc
+                    """);
+        }
+
+        if (only.isEmpty() || only.contains("stage3")) {
+            System.out.println("== stage3 ==");
+            expect("--top 2 < sample.txt", run(sample, "--top", "2"), """
+                    {{lines}}: 3
+                    {{words}}: {{sampleWords}}
+                    {{chars}}: {{sampleChars}}
+                    {{longest}}: {{sampleLongest}}
+                    {{top}}-2:
+                      java     2
+                      jvm      2
+                    """);
+            expect("--top 3 ({{caseAndTies}})", run("B a b, A! c b\n", "--top", "3"), """
+                    {{lines}}: 1
+                    {{words}}: 6
+                    {{chars}}: 13
+                    {{longest}}: B
+                    {{top}}-3:
+                      b        3
+                      a        2
+                      c        1
+                    """);
+            expectExit("--top abc", run("x\n", "--top", "abc"), 1);
+            expectExit("--top ({{noNumber}})", run("x\n", "--top"), 1);
+            expectExit("--unknown", run("x\n", "--unknown"), 1);
+        }
+
+        System.out.printf("%n{{passedWord}}: %d, {{failedWord}}: %d%n", passed, failed);
+        System.exit(failed == 0 ? 0 : 1);
+    }
+
+    static Result run(String stdin, String... args) throws Exception {
+        String java = ProcessHandle.current().info().command().orElse("java");
+        List<String> cmd = new ArrayList<>(List.of(java, "-Dfile.encoding=UTF-8", "-Dstdout.encoding=UTF-8", "-Dstderr.encoding=UTF-8", "WordStats.java"));
+        cmd.addAll(Arrays.asList(args));
+        Process p = new ProcessBuilder(cmd).start();
+        try (OutputStream in = p.getOutputStream()) {
+            in.write(stdin.getBytes(StandardCharsets.UTF_8));
+        }
+        var out = new ByteArrayOutputStream();
+        var err = new ByteArrayOutputStream();
+        Thread t1 = Thread.ofPlatform().start(() -> copy(p.getInputStream(), out));
+        Thread t2 = Thread.ofPlatform().start(() -> copy(p.getErrorStream(), err));
+        if (!p.waitFor(30, TimeUnit.SECONDS)) { p.destroyForcibly(); throw new IllegalStateException("timeout"); }
+        t1.join();
+        t2.join();
+        return new Result(p.exitValue(), out.toString(StandardCharsets.UTF_8).replace("\r\n", "\n"), err.toString(StandardCharsets.UTF_8));
+    }
+
+    static void copy(InputStream in, OutputStream out) {
+        try { in.transferTo(out); } catch (IOException e) { throw new UncheckedIOException(e); }
+    }
+
+    static void expect(String name, Result r, String expected) {
+        if (r.exitCode() == 0 && r.out().equals(expected)) { ok(name); return; }
+        fail(name);
+        if (r.exitCode() != 0) System.out.println("    exit code " + r.exitCode() + "\n    " + r.err().strip().replace("\n", "\n    "));
+        String[] e = expected.split("\n", -1), o = r.out().split("\n", -1);
+        for (int i = 0; i < Math.max(e.length, o.length); i++) {
+            String a = i < e.length ? e[i] : "<->", b = i < o.length ? o[i] : "<->";
+            if (!a.equals(b)) System.out.printf("    {{lineWord}} %d: {{expectedWord}} \"%s\", {{gotWord}} \"%s\"%n", i + 1, a, b);
+        }
+    }
+
+    static void expectExit(String name, Result r, int code) {
+        if (r.exitCode() == code && !r.err().isBlank()) { ok(name); return; }
+        fail(name);
+        System.out.println("    {{exitExpected}} " + code + " + System.err; {{gotWord}}: " + r.exitCode()
+                + (r.err().isBlank() ? ", {{emptyErr}}" : ""));
+    }
+
+    static void ok(String name) { passed++; System.out.println("  ✓ " + name); }
+    static void fail(String name) { failed++; System.out.println("  ✗ " + name); }
+}

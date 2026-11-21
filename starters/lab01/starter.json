@@ -1,0 +1,49 @@
+{
+  "maven": false,
+  "messages": {
+    "checkerTitle": { "ua": "Перевіряє WordStats.java з цієї ж папки (етапи 2 і 3).", "en": "Checks WordStats.java from the same folder (stages 2 and 3)." },
+    "allStages": { "ua": "усі перевірки", "en": "all checks" },
+    "oneStage": { "ua": "лише етап 2 (або stage3)", "en": "only stage 2 (or stage3)" },
+    "checkerHow": { "ua": "Кожна перевірка запускає `java WordStats.java` окремим процесом, подає текст на стандартний вхід і порівнює вивід із завданням.", "en": "Each check runs `java WordStats.java` as a separate process, feeds text to standard input and compares the output with the task." },
+    "noFile": { "ua": "Немає WordStats.java у поточній папці: запустіть перевірку з папки lab01.", "en": "No WordStats.java in the current folder: run the checker from the lab01 folder." },
+    "lines": { "ua": "Рядки", "en": "Lines" },
+    "words": { "ua": "Слова", "en": "Words" },
+    "chars": { "ua": "Символи", "en": "Characters" },
+    "longest": { "ua": "Найдовше слово", "en": "Longest word" },
+    "top": { "ua": "Топ", "en": "Top" },
+    "sampleWords": { "ua": "13", "en": "15" },
+    "sampleChars": { "ua": "67", "en": "80" },
+    "sampleLongest": { "ua": "програмування", "en": "programming" },
+    "emptyInput": { "ua": "порожній вхід", "en": "empty input" },
+    "punctuation": { "ua": "розділові знаки й кілька пробілів", "en": "punctuation and several spaces" },
+    "firstLongest": { "ua": "перше з найдовших слів", "en": "the first of the longest words" },
+    "caseAndTies": { "ua": "регістр і рівні частоти", "en": "case and equal frequencies" },
+    "noNumber": { "ua": "без числа", "en": "no number" },
+    "passedWord": { "ua": "Пройдено", "en": "Passed" },
+    "failedWord": { "ua": "провалено", "en": "failed" },
+    "lineWord": { "ua": "рядок", "en": "line" },
+    "expectedWord": { "ua": "очікувалось", "en": "expected" },
+    "gotWord": { "ua": "отримано", "en": "got" },
+    "exitExpected": { "ua": "очікувався код виходу", "en": "expected exit code" },
+    "emptyErr": { "ua": "System.err порожній", "en": "System.err is empty" },
+    "wsHint": { "ua": "Етап 2: без пакета, без колекцій і Stream API — лише масиви, String, StringBuilder і цикли.", "en": "Stage 2: no package, no collections and no Stream API — only arrays, String, StringBuilder and loops." },
+    "todoCount": { "ua": "рахуйте рядки, слова, символи і найдовше слово", "en": "count lines, words, characters and the longest word" },
+    "todoPrint": { "ua": "надрукуйте статистику у форматі із завдання", "en": "print the statistics in the format from the task" }
+  },
+  "readme": {
+    "title": { "ua": "Лабораторна 01: Середовище, Git і перша програма", "en": "Lab 01: Environment, Git and the First Program" },
+    "intro": {
+      "ua": "Мета цієї лабораторної — налаштувати середовище і навчитися працювати з Git, тож проєкт ви створюєте самі. Тут лише допоміжні файли.",
+      "en": "The goal of this lab is to set up the environment and learn Git, so you create the project yourself. Only helper files are here."
+    },
+    "files": [
+      { "names": ["sample.txt"], "status": { "ua": "приклад тексту з етапу 2", "en": "the sample text from stage 2" } },
+      { "names": ["WordStats.java"], "status": { "ua": "**ваше**: заготовка з читанням стандартного входу", "en": "**yours**: a skeleton that reads standard input" } },
+      { "names": ["CheckWordStats.java"], "status": { "ua": "перевірка етапів 2 і 3", "en": "a checker for stages 2 and 3" } }
+    ],
+    "notes": {
+      "ua": "## Як користуватися\n\nСкопіюйте ці файли в папку `lab01/` вашого репозиторію (етап 1). Після етапу 2 запустіть із цієї папки:\n\n```bash\njava WordStats.java < sample.txt\njava CheckWordStats.java stage2\njava CheckWordStats.java          # етапи 2 і 3\n```\n\nПотрібна Java 21. Перевірка лише підказує: оцінюють і історію Git (коміти, гілка, злиття, тег), яку вона не бачить.",
+      "en": "## How to use\n\nCopy these files into the `lab01/` folder of your repository (stage 1). After stage 2 run from that folder:\n\n```bash\njava WordStats.java < sample.txt\njava CheckWordStats.java stage2\njava CheckWordStats.java          # stages 2 and 3\n```\n\nJava 21 is required. The checker only gives hints: the Git history (commits, the branch, the merge, the tag) is graded too, and it does not see that."
+    }
+  }
+}

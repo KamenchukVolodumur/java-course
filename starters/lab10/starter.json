@@ -1,0 +1,22 @@
+{
+  "messages": {
+    "invalidPesel": { "ua": "некоректний PESEL", "en": "invalid PESEL" },
+    "emptyName": { "ua": "порожнє ім'я", "en": "empty name" },
+    "negBalance": { "ua": "баланс < 0", "en": "balance < 0" },
+    "someone": { "ua": "Хтось", "en": "Someone" }
+  },
+  "readme": {
+    "title": { "ua": "Лабораторна 10: Шарова архітектура, JDBC і Mockito", "en": "Lab 10: Layered Architecture, JDBC and Mockito" },
+    "files": [
+      { "names": ["schema.sql", "logback.xml", "Client", "ClientRepository", "*Exception"], "status": "given" },
+      { "names": ["Pesel", "Database", "JdbcClientRepository", "ClientService"], "status": "yours" },
+      { "names": ["ClientServiceTest"], "status": { "ua": "**ваше**: тести на Mockito (етап 5), перший уже написано", "en": "**yours**: the Mockito tests (stage 5), the first one is already written" } },
+      { "names": ["src/test/java/..."], "status": "tests" }
+    ],
+    "stages": ["stage1", "stage2", "stage3", "stage4", "stage5"],
+    "notes": {
+      "ua": "> Інтеграційні тести (`*IT`, база H2) запускає `./mvnw verify`, а не `./mvnw test`: `./mvnw verify -Dgroups=stage3`. Модульні тести (`*Test`) — `./mvnw test`.\n>\n> Етап 5 — це **ваші** тести в `ClientServiceTest`: чотири з них поки що падають з `TODO`. Код цієї лабораторної знадобиться в лабораторній 12.",
+      "en": "> The integration tests (`*IT`, an H2 database) run with `./mvnw verify`, not `./mvnw test`: `./mvnw verify -Dgroups=stage3`. The unit tests (`*Test`) run with `./mvnw test`.\n>\n> Stage 5 is **your** tests in `ClientServiceTest`: four of them fail with `TODO` for now. The code of this lab will be needed in lab 12."
+    }
+  }
+}

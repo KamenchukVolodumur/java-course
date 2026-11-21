@@ -1,0 +1,39 @@
+{
+  "messages": {
+    "keyboard": { "ua": "Клавіатура", "en": "Keyboard" },
+    "mouse": { "ua": "Миша", "en": "Mouse" },
+    "cable": { "ua": "Кабель", "en": "Cable" },
+    "addr1": { "ua": "вул. Кошикова 75, Варшава", "en": "75 Koszykowa St, Warsaw" },
+    "addr2": { "ua": "вул. Довга 1, Краків", "en": "1 Długa St, Kraków" },
+    "mailTo": { "ua": "до", "en": "to" },
+    "mailOrder": { "ua": "замовлення", "en": "order" },
+    "mailAccepted": { "ua": "прийнято", "en": "accepted" },
+    "total": { "ua": "РАЗОМ", "en": "TOTAL" },
+    "pricePositive": { "ua": "ціна має бути > 0", "en": "price must be > 0" },
+    "qtyPositive": { "ua": "кількість має бути > 0", "en": "quantity must be > 0" },
+    "noCustomer": { "ua": "немає клієнта", "en": "no customer" },
+    "noItems": { "ua": "замовлення без товарів", "en": "order has no items" },
+    "noAddress": { "ua": "немає адреси доставки", "en": "no shipping address" },
+    "outOfStock": { "ua": "брак товару: %s (є %d, потрібно %d)", "en": "out of stock: %s (have %d, need %d)" },
+    "itemsWord": { "ua": "товари", "en": "items" },
+    "discountWord": { "ua": "знижка", "en": "discount" },
+    "giftWrap": { "ua": "подарункове пакування", "en": "gift wrap" },
+    "insurance": { "ua": "страхування", "en": "insurance" },
+    "shipping": { "ua": "доставка", "en": "shipping" }
+  },
+  "readme": {
+    "title": { "ua": "Лабораторна 11: Патерни проєктування — система замовлень", "en": "Lab 11: Design Patterns — an Order System" },
+    "files": [
+      { "names": ["Main.java"], "status": "main" },
+      { "names": ["Customer", "CustomerType", "DiscountPolicy", "Discount", "OrderPlaced", "OrderCancelled", "Priced", "OrderRequest"], "status": "given" },
+      { "names": ["OrderItem", "Order", "DiscountFactory", "OrderEvents", "Inventory", "Analytics", "BasePrice", "GiftWrap", "Insurance", "Shipping", "Receipt", "OrderService"], "status": "yours" },
+      { "names": ["src/test/java/..."], "status": "tests" }
+    ],
+    "mains": ["pl.mini.shop.Main"],
+    "stages": ["stage1", "stage2", "stage3", "stage4", "stage5"],
+    "notes": {
+      "ua": "> Політики знижок (`student`, `vip`, `bulk`, промокоди) реалізуйте самі: лямбдами або маленькими класами в пакеті `discount`.",
+      "en": "> Implement the discount policies (`student`, `vip`, `bulk`, promo codes) yourself: as lambdas or small classes in the `discount` package."
+    }
+  }
+}

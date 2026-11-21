@@ -1,150 +1,325 @@
 export const lecture14 = {
   id: "14",
-  title: "Wykład 14: Zaawansowana Synchronizacja, Sygnalizacja i Procesory Adnotacji",
-  description: "Blokowanie współdzielone (ReadWriteLock, StampedLock), mechanizmy sygnalizacji wątków (CountDownLatch, CyclicBarrier, Semaphore), kolekcje współbieżne oraz procesory adnotacji (Annotation Processors) jako alternatywa generatorów kodu.",
+  title: "Лекція 14: Спільні блокування, сигналізація, конкурентні колекції та процесори анотацій",
+  description: "ReadWriteLock і StampedLock; примітиви сигналізації: CountDownLatch, CyclicBarrier, Semaphore, Phaser; конкурентні колекції: ConcurrentHashMap, BlockingQueue, CopyOnWriteArrayList; ThreadLocal; генерація коду під час компіляції процесорами анотацій (аналог source generators у C#).",
   sections: [
     {
-      title: "1. Blokowanie Współdzielone: ReadWriteLock & StampedLock",
+      title: "1. ReadWriteLock — багато читачів, один записувач",
       content: `
-Zwykły \`lock\` (blokowanie wyłączne) drastycznie ogranicza skalowalność aplikacji w scenariuszach, gdzie dane są bardzo często czytane, a rzadko modyfikowane. Wiele wątków może bezpiecznie czytać te same dane jednocześnie, a blokować należy tylko wątki modyfikujące.
-
-### 1. ReentrantReadWriteLock:
-Dzieli blokadę na dwie części:
-* **Read Lock (blokada odczytu)**: Może być uzyskana przez wiele wątków czytających jednocześnie, pod warunkiem, że żaden wątek nie modyfikuje danych.
-* **Write Lock (blokada zapisu)**: Wyłączna blokada dla wątku modyfikującego. Blokuje zarówno innych piszących, jak i wszystkich czytających.
+Якщо дані часто читають і рідко змінюють, звичайний замок зайво серіалізує читачів. \`ReadWriteLock\` дозволяє **багатьом читачам** працювати одночасно, а **записувачу** — лише одному і без читачів. Аналог \`ReaderWriterLockSlim\` у C#.
 
 \`\`\`java
-private final ReentrantReadWriteLock rwl = new ReentrantReadWriteLock();
-private final Lock readLock = rwl.readLock();
-private final Lock writeLock = rwl.writeLock();
-private int data = 0;
+public class Cache<K, V> {
+    private final Map<K, V> map = new HashMap<>();
+    private final ReentrantReadWriteLock rw = new ReentrantReadWriteLock();
+    private final Lock read = rw.readLock();
+    private final Lock write = rw.writeLock();
 
-public int readData() {
-    readLock.lock();
-    try { return data; }
-    finally { readLock.unlock(); }
-}
+    public V get(K key) {
+        read.lock();
+        try { return map.get(key); }
+        finally { read.unlock(); }
+    }
 
-public void writeData(int newValue) {
-    writeLock.lock();
-    try { data = newValue; }
-    finally { writeLock.unlock(); }
-}
-\`\`\`
-
-### 2. StampedLock (Java 8):
-Nowocześniejszy mechanizm optymalizacyjny. Oferuje tzw. **odczyt optymistyczny (Optimistic Read)**. Wątek czytający pobiera pieczęć (stamp) i czyta dane bez zakładania blokady. Na koniec weryfikuje pieczęć (\`validate()\`). Jeśli żaden wątek nie zapisał danych w międzyczasie, odczyt kończy się powodzeniem bez jakiegokolwiek narzutu synchronizacyjnego. W przeciwnym wypadku wątek przechodzi w klasyczny odczyt blokujący.
-
-\`\`\`java
-StampedLock lock = new StampedLock();
-
-// Optimistic Read
-long stamp = lock.tryOptimisticRead();
-double currentX = x, currentY = y; // odczyt pól
-if (!lock.validate(stamp)) {
-    // Wartość mogła się zmienić — fallback do pełnego odczytu
-    stamp = lock.readLock();
-    try {
-        currentX = x;
-        currentY = y;
-    } finally {
-        lock.unlockRead(stamp);
+    public void put(K key, V value) {
+        write.lock();
+        try { map.put(key, value); }
+        finally { write.unlock(); }
     }
 }
 \`\`\`
-`
-    },
-    {
-      title: "2. Narzędzia Sygnalizacji Wątków",
-      content: `
-Klasy z pakietu \`java.util.concurrent\` dostarczają wyspecjalizowane synchronizatory ułatwiające koordynację pracy wątków:
 
-* **\`Semaphore\`**: Kontroluje dostęp do ograniczonej liczby zasobów za pomocą liczników zezwoleń (\`acquire()\` pobiera zezwolenie, \`release()\` je zwraca).
-* **\`CountDownLatch\`**: Pozwala jednemu lub wielu wątkom na oczekiwanie (\`await()\`), aż grupa operacji wykonywanych w innych wątkach zostanie zakończona. Licznik jest zmniejszany za pomocą \`countDown()\` i jest **jednorazowy** (nie można go zresetować).
-* **\`CyclicBarrier\`**: Pozwala grupie wątków na wzajemne czekanie na siebie w punkcie synchronizacji (barierze) za pomocą \`await()\`. Po osiągnięciu limitu bariera jest zwalniana i może być użyta ponownie (jest **cykliczna**).
-* **\`Phaser\`**: Bardziej elastyczny synchronizator uogólniający zarówno \`CountDownLatch\`, jak i \`CyclicBarrier\`. Umożliwia dynamiczną rejestrację/wyrejestrowanie uczestników oraz obsługę wielu faz synchronizacji.
+> [!WARNING]
+> **Підвищити** read-lock до write-lock не можна: якщо, тримаючи read, викликати \`write.lock()\`, потік заблокує сам себе. **Знизити** можна: захопити read, тримаючи write, а потім звільнити write.
 
-Przykład CountDownLatch:
+### StampedLock — оптимістичне читання
+
 \`\`\`java
-CountDownLatch latch = new CountDownLatch(3); // Czekamy na 3 usługi pomocnicze
+public class Point {
+    private double x, y;
+    private final StampedLock sl = new StampedLock();
 
-// Wątki pomocnicze wywołują latch.countDown() po zainicjalizowaniu
-executor.submit(() -> {
-    // inicjalizacja...
-    latch.countDown();
-});
+    public double distanceFromOrigin() {
+        long stamp = sl.tryOptimisticRead();    // без блокування!
+        double cx = x, cy = y;
+        if (!sl.validate(stamp)) {              // хтось писав за цей час
+            stamp = sl.readLock();
+            try { cx = x; cy = y; }
+            finally { sl.unlockRead(stamp); }
+        }
+        return Math.hypot(cx, cy);
+    }
 
-// Wątek główny czeka na ukończenie wszystkich trzech inicjalizacji
-latch.await(); 
-System.out.println("Wszystkie usługi wystartowały. Uruchamianie aplikacji głównej...");
+    public void move(double dx, double dy) {
+        long stamp = sl.writeLock();
+        try { x += dx; y += dy; }
+        finally { sl.unlockWrite(stamp); }
+    }
+}
 \`\`\`
+
+\`StampedLock\` **не реентерабельний** і не підтримує \`Condition\`. Використовуйте його, лише коли профілювання покаже, що \`ReadWriteLock\` справді заважає.
 `
     },
     {
-      title: "3. Kolekcje Współbieżne (Concurrent Collections)",
+      title: "2. Примітиви сигналізації",
       content: `
-Standardowe kolekcje z JCF (np. \`ArrayList\`, \`HashMap\`) nie są bezpieczne wątkowo. Używanie dla nich wrapperów typu \`Collections.synchronizedMap()\` synchronizuje całą mapę na jednym monitorze lock, co drastycznie spowalnia aplikację w środowisku wielowątkowym.
+### CountDownLatch — «дочекатися N подій»
 
-Pakiet \`java.util.concurrent\` zawiera wysoce zoptymalizowane kolekcje współbieżne:
+Одноразовий лічильник: \`await()\` блокується, доки інші потоки не викличуть \`countDown()\` N разів. Аналог \`CountdownEvent\` у C#.
 
-* **\`ConcurrentHashMap\`**: Zamiast blokowania całej mapy, używa blokowania na poziomie pojedynczych kubełków (\`synchronized\` na węźle głównym kubełka) oraz operacji atomowych CAS (Compare-And-Swap) dla pustych kubełków. Ta architektura (od Javy 8) zapewnia wysoką współbieżność bez globalnych blokad. Umożliwia jednoczesny odczyt wielu wątkom bez blokowania.
-* **\`CopyOnWriteArrayList\`**: Każda modyfikacja (dodanie/usunięcie) tworzy nową kopię całej wewnętrznej tablicy pod spodem. Odczyt jest niezwykle szybki i nieblokujący, ale zapis jest bardzo kosztowny. Idealna do list typu *listenerzy/subskrybenci* (bardzo dużo odczytów, sporadyczne zapisy).
-* **\`BlockingQueue\`** (\`LinkedBlockingQueue\`, \`ArrayBlockingQueue\`): Kolejki blokujące wątki przy próbie pobrania z pustej kolejki (\`take()\`) lub zapisu do pełnej kolejki (\`put()\`). Kluczowy element wzorca **Producent-Konsument**.
+\`\`\`java
+CountDownLatch ready = new CountDownLatch(3);
+for (int i = 0; i < 3; i++) {
+    int id = i;
+    pool.submit(() -> {
+        loadPart(id);
+        ready.countDown();
+    });
+}
+ready.await();                         // або await(5, TimeUnit.SECONDS)
+System.out.println("усі частини завантажено");
+\`\`\`
+
+### CyclicBarrier — «зустріч» N потоків, багаторазово
+
+\`\`\`java
+CyclicBarrier barrier = new CyclicBarrier(4, () -> System.out.println("крок завершено"));
+for (int w = 0; w < 4; w++) {
+    pool.submit(() -> {
+        for (int step = 0; step < 10; step++) {
+            computeMyPart(step);
+            barrier.await();           // чекаємо інших; дію бар'єра виконує останній потік
+        }
+        return null;
+    });
+}
+\`\`\`
+
+Аналог у C# — \`Barrier\`. Корисно для ітеративних симуляцій (гра «Життя», методи скінченних різниць), де крок k+1 потребує результатів усіх потоків з кроку k.
+
+### Semaphore — обмеження кількості одночасних доступів
+
+\`\`\`java
+Semaphore permits = new Semaphore(3);         // не більше 3 одночасних з'єднань
+void callApi() throws InterruptedException {
+    permits.acquire();
+    try { http.send(...); }
+    finally { permits.release(); }
+}
+\`\`\`
+
+Аналог \`SemaphoreSlim\`. Семафор не має власника: \`release()\` може викликати будь-який потік.
+
+### Phaser і Exchanger
+
+* \`Phaser\` — гнучкий бар'єр зі змінною кількістю учасників (\`register\`, \`arriveAndDeregister\`).
+* \`Exchanger<T>\` — два потоки обмінюються об'єктами в точці зустрічі.
+
+| Задача | Інструмент |
+| --- | --- |
+| Головний потік чекає на N робітників | \`CountDownLatch\` |
+| N потоків синхронізуються на кожному кроці | \`CyclicBarrier\` / \`Phaser\` |
+| Обмежити паралельність | \`Semaphore\` |
+| Передавати дані між потоками | \`BlockingQueue\` |
+| Чекати на результат задачі | \`Future\` / \`CompletableFuture\` |
 `
     },
     {
-      title: "4. Procesory Adnotacji (Annotation Processors)",
+      title: "3. Конкурентні колекції",
       content: `
-W przeciwieństwie do generatorów źródłowych (Source Generators) w C#, Java od wersji 6 posiada mechanizm **Annotation Processing Tool (APT)**, zintegrowany bezpośrednio z kompilatorem \`javac\`.
+\`Collections.synchronizedMap(map)\` обгортає **кожен** метод одним замком. Складені дії («перевірити — покласти») все одно не атомарні, а під час ітерації колекцію треба блокувати вручну. Пакет \`java.util.concurrent\` пропонує кращі рішення.
 
-Procesory adnotacji skanują kod źródłowy w poszukiwaniu adnotacji w czasie kompilacji i mogą generować dodatkowe pliki źródłowe Java (\`.java\`), pliki zasobów lub klasy. Zapewnia to zerowy narzut wydajnościowy w runtime (brak refleksji).
+### ConcurrentHashMap
 
-Najważniejsze zastosowania APT w ekosystemie Java:
-1. **Lombok**: Modyfikuje bezpośrednio drzewo AST kodu w pamięci kompilatora, wstrzykując metody takie jak gettery, settery, konstruktory, \`builder()\` i \`toString()\` na podstawie adnotacji:
-   \`\`\`java
-   @Getter @Setter @Builder
-   public class User {
-       private String name;
-       private int age;
-   } // Metody getName(), setName(), build() itp. są generowane przy kompilacji
-   \`\`\`
-2. **MapStruct**: Generuje w czasie kompilacji kod klas mapujących (mappery typu DTO-Entity), który wykonuje zwykłe, szybkie przypisania pól \`get/set\`, zastępując refleksję.
+\`\`\`java
+ConcurrentHashMap<String, LongAdder> hits = new ConcurrentHashMap<>();
+
+// атомарні складені операції
+hits.computeIfAbsent(url, k -> new LongAdder()).increment();
+counts.merge(word, 1, Integer::sum);
+map.putIfAbsent(key, value);
+map.compute(key, (k, v) -> v == null ? 1 : v + 1);
+
+// ПОМИЛКА: гонка між get і put
+if (!map.containsKey(k)) map.put(k, v);
+\`\`\`
+
+* Блокування дрібнозернисте (на рівні кошика), а читання майже завжди без блокувань.
+* Ітератори **слабо узгоджені** (weakly consistent): не кидають \`ConcurrentModificationException\`, але можуть не побачити зміни, зроблені під час обходу.
+* \`null\` як ключ чи значення **заборонений**.
+* Паралельні масові операції: \`map.forEach(1000, (k, v) -> ...)\`, \`reduceValues\`, \`search\`.
+
+Аналог — \`ConcurrentDictionary\` (\`GetOrAdd\` ↔ \`computeIfAbsent\`, \`AddOrUpdate\` ↔ \`merge\`).
+
+### BlockingQueue — виробник/споживач
+
+\`\`\`java
+BlockingQueue<Order> queue = new ArrayBlockingQueue<>(100);   // обмежена черга
+
+// виробник
+queue.put(order);                       // блокується, якщо черга повна
+queue.offer(order, 1, TimeUnit.SECONDS);
+
+// споживач
+while (!Thread.currentThread().isInterrupted()) {
+    Order o = queue.take();             // блокується, якщо черга порожня
+    process(o);
+}
+\`\`\`
+
+| Реалізація | Особливість |
+| --- | --- |
+| \`ArrayBlockingQueue\` | обмежена, на масиві |
+| \`LinkedBlockingQueue\` | опційно обмежена |
+| \`PriorityBlockingQueue\` | з пріоритетами, необмежена |
+| \`DelayQueue\` | елемент доступний після затримки |
+| \`SynchronousQueue\` | без буфера: передача «з рук у руки» |
+
+Аналог — \`BlockingCollection<T>\` / \`Channel<T>\` у .NET.
+
+> [!TIP]
+> Щоб зупинити споживачів, використовують **отруйну пігулку** (poison pill): спеціальний об'єкт-маркер, побачивши який, споживач завершує роботу.
+
+### Інші
+
+* \`CopyOnWriteArrayList\` — кожна зміна копіює масив. Ідеальний, коли читань багато, а змін мало (списки слухачів).
+* \`ConcurrentLinkedQueue\` / \`ConcurrentLinkedDeque\` — неблокувальні черги на CAS.
+* \`ConcurrentSkipListMap\` / \`Set\` — відсортовані конкурентні колекції (замість \`TreeMap\`).
+`
+    },
+    {
+      title: "4. ThreadLocal",
+      content: `
+Окрема копія змінної для кожного потоку. Аналог \`ThreadLocal<T>\` / \`[ThreadStatic]\` у C#.
+
+\`\`\`java
+private static final ThreadLocal<SimpleDateFormat> FMT =
+        ThreadLocal.withInitial(() -> new SimpleDateFormat("yyyy-MM-dd"));   // SimpleDateFormat не потокобезпечний
+
+String s = FMT.get().format(date);
+\`\`\`
+
+Типове застосування — контекст запиту (id користувача, транзакція, MDC у логуванні, лекція 19).
+
+> [!WARNING]
+> У пулах потоки живуть довго. Якщо не викликати \`remove()\`, значення «перетече» в наступну задачу і створить витік пам'яті. Шаблон: \`try { CTX.set(x); ... } finally { CTX.remove(); }\`. Для віртуальних потоків замість \`ThreadLocal\` призначені **ScopedValue** (Java 25).
+`
+    },
+    {
+      title: "5. Процесори анотацій — генерація коду під час компіляції",
+      content: `
+У C# є **source generators**. Їхній аналог у Java — **процесори анотацій** (JSR 269). Компілятор \`javac\` викликає їх під час компіляції, вони аналізують анотований код і можуть **генерувати нові файли**: класи, ресурси. На цьому побудовано Lombok, MapStruct, Dagger, AutoValue і Micronaut.
+
+\`\`\`java
+@Retention(RetentionPolicy.SOURCE)        // анотація потрібна лише компілятору
+@Target(ElementType.TYPE)
+public @interface GenerateBuilder { }
+
+@GenerateBuilder
+public class User {
+    String name;
+    int age;
+}
+\`\`\`
+
+\`\`\`java
+@SupportedAnnotationTypes("pl.mini.GenerateBuilder")
+@SupportedSourceVersion(SourceVersion.RELEASE_21)
+public class BuilderProcessor extends AbstractProcessor {
+
+    @Override
+    public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment env) {
+        for (Element e : env.getElementsAnnotatedWith(GenerateBuilder.class)) {
+            if (e.getKind() != ElementKind.CLASS) {
+                processingEnv.getMessager().printMessage(
+                        Diagnostic.Kind.ERROR, "@GenerateBuilder лише для класів", e);
+                continue;
+            }
+            TypeElement type = (TypeElement) e;
+            String pkg = processingEnv.getElementUtils().getPackageOf(type).toString();
+            String name = type.getSimpleName() + "Builder";
+
+            List<VariableElement> fields = ElementFilter.fieldsIn(type.getEnclosedElements());
+            try (Writer w = processingEnv.getFiler()
+                    .createSourceFile(pkg + "." + name, type).openWriter()) {
+                w.write(generateSource(pkg, name, type, fields));   // звичайний текст Java
+            } catch (IOException ex) {
+                processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR, ex.getMessage());
+            }
+        }
+        return true;
+    }
+}
+\`\`\`
+
+Реєстрація: файл \`META-INF/services/javax.annotation.processing.Processor\` з повною назвою класу процесора. Процесор пакується в окремий JAR і підключається через \`annotationProcessorPaths\` у Maven або \`annotationProcessor\` у Gradle.
+
+### Обмеження
+
+* Стандартний API дозволяє **лише створювати нові файли**, а не змінювати існуючі класи. Lombok обходить це хаком з внутрішнім API компілятора.
+* Обробка йде **раундами**: згенерований код теж проходить через процесори.
+* Процесор бачить модель коду (\`Element\`, \`TypeMirror\`), а не дерево виразів усередині методів.
+
+| | C# Source Generators | Java Annotation Processors |
+| --- | --- | --- |
+| Коли працює | під час компіляції | під час компіляції |
+| Змінює наявний код | ні (partial-класи) | ні |
+| Тригер | будь-який синтаксис | анотації |
+| Видимість у тілах методів | так (Roslyn) | ні |
 `
     }
   ],
   quiz: [
     {
-      question: "Kiedy najlepiej zastosować ReentrantReadWriteLock zamiast zwykłego ReentrantLock?",
+      question: "Чому if (!map.containsKey(k)) map.put(k, v) некоректний для ConcurrentHashMap?",
       options: [
-        "W aplikacjach jednowątkowych.",
-        "W scenariuszach, w których operacje odczytu danych są wykonywane znacznie częściej niż operacje zapisu/modyfikacji.",
-        "Gdy zależy nam na szyfrowaniu zapisywanych obiektów.",
-        "Tylko podczas pracy z bazami danych SQL."
+        "ConcurrentHashMap не має containsKey",
+        "Між перевіркою і вставкою інший потік може вставити той самий ключ; потрібна атомарна операція putIfAbsent або computeIfAbsent",
+        "put кидає виняток",
+        "Це коректний код"
       ],
       answer: 1,
-      explanation: "ReadWriteLock pozwala wielu wątkom na jednoczesny odczyt (współdzielenie), a blokuje tylko przy zapisie. Sprawdza się to doskonale przy dużej przewadze odczytów."
+      explanation: "Кожен метод окремо потокобезпечний, але їх послідовність — ні. Використовуйте атомарні складені операції."
     },
     {
-      question: "Czym różni się CountDownLatch od CyclicBarrier?",
+      question: "Який примітив обрати, щоб головний потік дочекався завершення ініціалізації трьох сервісів?",
+      options: ["Semaphore(3)", "CountDownLatch(3)", "ReentrantLock", "Exchanger"],
+      answer: 1,
+      explanation: "Кожен сервіс викликає countDown(), а головний потік чекає в await(), доки лічильник не дійде до нуля."
+    },
+    {
+      question: "Що станеться, якщо потік, який тримає read-lock ReentrantReadWriteLock, викличе writeLock().lock()?",
       options: [
-        "CountDownLatch jest przeznaczony do pracy na stercie, a CyclicBarrier na stosie.",
-        "CountDownLatch służy do zliczania wyjątków, a CyclicBarrier do ich generowania.",
-        "CountDownLatch jest synchronizatorem jednorazowym (jego licznik po spadku do zera nie może być zresetowany), podczas gdy CyclicBarrier może być używany wielokrotnie po zresetowaniu.",
-        "CyclicBarrier nie może współpracować z pulami wątków."
+        "Блокування підвищиться до запису",
+        "Потік заблокує сам себе: записувач чекає, доки звільняться всі читачі, зокрема він сам",
+        "Виняток IllegalMonitorStateException",
+        "Read-lock звільниться автоматично"
+      ],
+      answer: 1,
+      explanation: "Підвищення (upgrade) не підтримується. Спочатку треба звільнити read-lock, а потім захопити write-lock і повторно перевірити умову."
+    },
+    {
+      question: "Що робить BlockingQueue.take() на порожній черзі?",
+      options: [
+        "Повертає null",
+        "Кидає NoSuchElementException",
+        "Блокує потік, доки не з'явиться елемент",
+        "Повертає Optional.empty()"
       ],
       answer: 2,
-      explanation: "CountDownLatch po otwarciu bramy pozostaje otwarty na stałe (latch). CyclicBarrier pozwala grupie wątków na wielokrotne cykliczne czekanie na siebie w rundach."
+      explanation: "take/put блокуються, poll/offer повертають null/false або чекають до тайм-ауту. Так легко реалізувати патерн «виробник — споживач»."
     },
     {
-      question: "W jaki sposób Annotation Processors (np. Lombok, MapStruct) wpływają na wydajność aplikacji w runtime?",
+      question: "Що можуть процесори анотацій зі стандартного API?",
       options: [
-        "Spowalniają aplikację, ponieważ stale analizują kod przez refleksję.",
-        "Mają zerowy wpływ na wydajność w runtime, ponieważ generują lub modyfikują kod w czasie kompilacji (aplikacja uruchamia się z gotowym kodem Java).",
-        "Wymagają instalacji agenta JVM.",
-        "Zwiększają zużycie pamięci heap o 50%."
+        "Змінювати байт-код наявних класів",
+        "Генерувати нові вихідні файли та повідомляти про помилки компіляції",
+        "Працювати під час виконання програми",
+        "Змінювати тіла методів"
       ],
       answer: 1,
-      explanation: "Annotation Processors działają wyłącznie na etapie kompilacji (build-time). Wygenerowany kod staje się częścią kodu bajtowego pliku class, przez co uruchomienie programu nie ponosi żadnego kosztu refleksji."
+      explanation: "Через Filer процесор створює нові файли, а через Messager виводить попередження й помилки. Змінювати наявний код стандартний API не дозволяє."
     }
   ]
 };

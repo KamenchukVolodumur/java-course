@@ -1,236 +1,351 @@
 export const lab10 = {
   id: "Lab10",
-  title: "Лабораторна 10: Multithreaded Order Book (Біржовий Стакан)",
-  description: "Низькорівнева багатопоточність: спільний стан, Race Conditions, ReentrantLock, Atomic змінні та Thread Pools на прикладі ядра криптовалютної біржі.",
+  title: "Лабораторна 10: Шарова архітектура, JDBC, транзакції та Mockito",
+  description: "Модуль обслуговування клієнтів банку: доменна модель і валідація PESEL, репозиторій на чистому JDBC (PreparedStatement, згенеровані ключі, Optional), атомарний переказ коштів у транзакції, сервіс із логуванням SLF4J без персональних даних, модульні тести з Mockito та інтеграційні тести на H2.",
   sections: [
     {
-      title: "Опис завдання",
+      title: "Перед початком",
       content: `
 > [!NOTE]
-> **Рекомендовані лекції для цієї лаби:** Лекції 13 та 14 (Java Memory Model, Synchronized, Locks, Concurrent Collections).
+> **Лекції:** 14.1 «Тестування з JUnit 5», 14.5 «Бази даних і JDBC», 14.6 «Логування і Mockito» · **Час:** 3 год · **Бали:** 10
 
-Уявіть, що ви працюєте в Binance. Ваше завдання — написати ядро біржі (Matching Engine). 
-До вас одночасно підключаються тисячі трейдерів. Одні хочуть купити біткоїн (Buy Bids), інші — продати (Sell Asks). Всі вони одночасно викликають метод \`submitOrder\`.
+Досі весь код жив у \`main\`. Тут ви побудуєте модуль так, як це роблять у комерційних проєктах:
 
-Якщо ви використаєте звичайний \`ArrayList\` без синхронізації, два трейдери можуть купити один і той самий біткоїн, або програма впаде з \`ConcurrentModificationException\`.
-Ваша мета — створити потокобезпечний (Thread-safe) "Біржовий стакан" (Order Book), використовуючи сучасні примітиви синхронізації.
+\`\`\`text
+pl.mini.bank
+├── domain/       Client, Pesel, InsufficientFundsException      (без залежностей)
+├── repository/   ClientRepository (інтерфейс), JdbcClientRepository, DataAccessException
+├── service/      ClientService                                   (бізнес-логіка, логування)
+└── db/           Database (DataSource + ініціалізація схеми)
+
+src/main/resources/schema.sql, logback.xml
+src/test/java/... ClientServiceTest (Mockito), JdbcClientRepositoryIT (H2)
+\`\`\`
+
+\`\`\`text
+ClientService ──► ClientRepository (інтерфейс) ◄── JdbcClientRepository ──► H2 / PostgreSQL
+      │                    ▲
+      └── у тестах: mock ──┘
+\`\`\`
+
+### Залежності
+
+\`\`\`xml
+<dependency><groupId>com.h2database</groupId><artifactId>h2</artifactId><version>2.3.232</version></dependency>
+<dependency><groupId>ch.qos.logback</groupId><artifactId>logback-classic</artifactId><version>1.5.8</version></dependency>
+<dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><version>5.11.0</version><scope>test</scope></dependency>
+<dependency><groupId>org.mockito</groupId><artifactId>mockito-junit-jupiter</artifactId><version>5.14.1</version><scope>test</scope></dependency>
+<dependency><groupId>org.assertj</groupId><artifactId>assertj-core</artifactId><version>3.26.3</version><scope>test</scope></dependency>
+\`\`\`
+
+### Правила
+
+* Критерій приймання — \`mvn verify\` проходить, і **надані тести** (нижче) зелені. Додайте власні тести на граничні випадки.
+* Гроші — лише \`BigDecimal\` у Java і \`NUMERIC(15,2)\` у базі.
+
+> [!CAUTION]
+> Заборонено: склеювання SQL з даними (\`"... WHERE pesel = '" + pesel + "'"\`), \`System.out.println\` у коді \`main\` (лише логер), повні номери PESEL у логах.
 `
     },
     {
-      title: "Task 1: Модель Ордера та Атомарність (1 бал)",
+      title: "Швидке повторення теорії",
       content: `
-Спершу створимо базові типи. Ордер (заявка) має тип, ціну, кількість і унікальний ID.
-
-Оскільки тисячі потоків будуть створювати ордери одночасно, звичайний лічильник \`id++\` не спрацює (це операція з 3 кроків: прочитати, додати, записати — тут станеться Race Condition). Ми використаємо **AtomicLong**.
+### JDBC: шаблон запиту
 
 \`\`\`java
-import java.util.concurrent.atomic.AtomicLong;
-
-public enum OrderType {
-    BUY, SELL
+String sql = "SELECT id, pesel, full_name, balance FROM clients WHERE pesel = ?";
+try (Connection c = dataSource.getConnection();
+     PreparedStatement ps = c.prepareStatement(sql)) {
+    ps.setString(1, pesel);
+    try (ResultSet rs = ps.executeQuery()) {
+        return rs.next() ? Optional.of(map(rs)) : Optional.empty();
+    }
+} catch (SQLException e) {
+    throw new DataAccessException("findByPesel", e);
 }
+\`\`\`
 
-public record Order(long id, OrderType type, double price, int quantity) {}
+### Транзакція
 
-public class OrderFactory {
-    // Klasa narzędziowa do generowania unikalnych ID bezpiecznie dla wątków
-    private static final AtomicLong idGenerator = new AtomicLong(1);
-
-    public static Order createOrder(OrderType type, double price, int quantity) {
-        // TODO: Użyj metody .getAndIncrement() na idGenerator, 
-        // aby uzyskać unikalne ID i stworzyć nowy obiekt Order.
-        return null;
+\`\`\`java
+try (Connection c = ds.getConnection()) {
+    c.setAutoCommit(false);
+    try {
+        // ... кілька UPDATE на ТОМУ САМОМУ з'єднанні c ...
+        c.commit();
+    } catch (Exception e) {
+        c.rollback();
+        throw e;
     }
 }
+\`\`\`
+
+### Mockito
+
+\`\`\`java
+@ExtendWith(MockitoExtension.class)
+class ServiceTest {
+    @Mock ClientRepository repo;
+    @InjectMocks ClientService service;
+
+    @Test void example() {
+        when(repo.findByPesel("44051401359")).thenReturn(Optional.empty());
+        service.register("44051401359", "Jan Kowalski");
+        verify(repo).save(argThat(c -> c.fullName().equals("Jan Kowalski")));
+    }
+}
+\`\`\`
+
+### SLF4J
+
+\`\`\`java
+private static final Logger log = LoggerFactory.getLogger(ClientService.class);
+log.info("Зареєстровано клієнта {}", Pesel.mask(pesel));   // плейсхолдер, а не "+"
+log.error("Переказ не вдався", e);                          // виняток останнім аргументом
 \`\`\`
 `
     },
     {
-      title: "Task 2: Структура Стакану та ReentrantLock (2 бали)",
+      title: "Етап 1: Модель і схема бази (1 б.)",
       content: `
-Створимо клас \`OrderBook\`. Він зберігатиме дві черги з пріоритетом (\`PriorityQueue\`):
-1. **Bids (Покупці):** Сортується за спаданням ціни (найвижча ціна перша — бо біржа хоче продати якомога дорожче).
-2. **Asks (Продавці):** Сортується за зростанням ціни (найнижча ціна перша).
+\`src/main/resources/schema.sql\`:
 
-Щоб захистити ці черги від одночасного доступу, використаємо \`ReentrantLock\`.
+\`\`\`sql
+CREATE TABLE IF NOT EXISTS clients (
+    id         BIGINT AUTO_INCREMENT PRIMARY KEY,
+    pesel      CHAR(11)      NOT NULL UNIQUE,
+    full_name  VARCHAR(200)  NOT NULL,
+    balance    NUMERIC(15,2) NOT NULL DEFAULT 0 CHECK (balance >= 0),
+    created_at TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+\`\`\`
 
 \`\`\`java
-import java.util.Comparator;
-import java.util.PriorityQueue;
-import java.util.concurrent.locks.ReentrantLock;
-
-public class OrderBook {
-    // Kolejka kupujących (najwyższa cena na szczycie)
-    private final PriorityQueue<Order> bids = new PriorityQueue<>(
-            Comparator.comparingDouble(Order::price).reversed()
-    );
-    
-    // Kolejka sprzedających (najniższa cena na szczycie)
-    private final PriorityQueue<Order> asks = new PriorityQueue<>(
-            Comparator.comparingDouble(Order::price)
-    );
-
-    // Zamek chroniący nasze kolejki przed Race Conditions
-    private final ReentrantLock lock = new ReentrantLock();
-
-    // Słowo 'volatile' gwarantuje, że zmiana tej zmiennej przez jeden wątek 
-    // jest natychmiast widoczna dla wszystkich innych wątków!
-    private volatile double lastTradedPrice = 0.0;
-
-    public void submitOrder(Order order) {
-        // TODO 1: Zablokuj zamek (lock.lock())
-        try {
-            // TODO 2: W zależności od order.type() dodaj zamówienie do 'bids' albo 'asks'
-            
-            // TODO 3: Wywołaj metodę matchOrders() (którą napiszemy w Task 3)
-            
-        } finally {
-            // TODO 4: ZAWSZE zwalniaj zamek w bloku finally! (lock.unlock())
-            // Jeśli wystąpi wyjątek, a zamek nie zostanie zwolniony, 
-            // CAŁY SERWER zawiesi się na zawsze (Deadlock).
-        }
-    }
-
-    public double getLastTradedPrice() {
-        return lastTradedPrice;
+public record Client(Long id, String pesel, String fullName, BigDecimal balance) {
+    public Client {               // компактний конструктор: інваріанти
+        if (!Pesel.isValid(pesel)) throw new IllegalArgumentException("некоректний PESEL");
+        if (fullName == null || fullName.isBlank()) throw new IllegalArgumentException("порожнє ім'я");
+        if (balance == null || balance.signum() < 0) throw new IllegalArgumentException("баланс < 0");
     }
 }
+
+public final class Database {
+    public static DataSource h2InMemory(String name);   // jdbc:h2:mem:<name>;DB_CLOSE_DELAY=-1, + виконання schema.sql
+}
 \`\`\`
+
+### Pesel
+
+\`\`\`java
+public final class Pesel {
+    public static boolean isValid(String pesel);
+    public static String mask(String pesel);    // "44051401359" -> "*******1359"
+}
+\`\`\`
+
+Правило контрольної цифри: ваги \`1 3 7 9 1 3 7 9 1 3\` для перших 10 цифр, \`S = Σ dᵢ·wᵢ\`, контрольна цифра = \`(10 − S mod 10) mod 10\` і має дорівнювати 11-й цифрі. Коректні приклади: \`44051401359\`, \`02070803628\`.
+
+* \`schema.sql\` читайте з classpath (\`Database.class.getResourceAsStream("/schema.sql")\`) і виконуйте через \`Statement.execute\`.
 `
     },
     {
-      title: "Task 3: Matching Engine (Критична секція) (2 бали)",
+      title: "Етап 2: Репозиторій на JDBC (3 б.)",
       content: `
-Метод \`matchOrders()\` запускається щоразу, коли додається новий ордер. Він намагається знайти пару.
-*Увага: цей метод є приватним і викликається ТІЛЬКИ з \`submitOrder\`, отже, він вже захищений нашим \`lock\`!*
-
 \`\`\`java
-private void matchOrders() {
-    // Pętla działa dopóki mamy zarówno kupujących jak i sprzedających
-    while (!bids.isEmpty() && !asks.isEmpty()) {
-        Order topBid = bids.peek();
-        Order topAsk = asks.peek();
-
-        // Jeśli najwyższa oferta kupna jest równa lub większa 
-        // od najniższej oferty sprzedaży -> MAMY DEAL!
-        if (topBid.price() >= topAsk.price()) {
-            
-            // TODO 1: Zdejmij oba zamówienia z kolejek (użyj .poll())
-            
-            // W naszym uproszczonym modelu zakładamy, że quantity to zawsze 1 
-            // (w prawdziwej giełdzie musielibyśmy rozliczać częściowe transakcje).
-            
-            // TODO 2: Ustaw lastTradedPrice na cenę sprzedającego (topAsk.price())
-            
-            System.out.printf("TRANSAKCJA: Kupujący #%d kupił od Sprzedającego #%d po cenie %.2f\\n",
-                    topBid.id(), topAsk.id(), lastTradedPrice);
-        } else {
-            // Ceny się nie krzyżują, przerywamy pętlę
-            break;
-        }
-    }
+public interface ClientRepository {
+    Client save(Client c);                      // INSERT; повертає копію з id з бази
+    Optional<Client> findByPesel(String pesel);
+    List<Client> findAll();                     // за id зростаючи
+    boolean updateBalance(String pesel, BigDecimal newBalance);   // false, якщо клієнта немає
+    void transfer(String fromPesel, String toPesel, BigDecimal amount);   // етап 3
 }
+
+public class DataAccessException extends RuntimeException { ... }   // unchecked обгортка SQLException
 \`\`\`
-`
-    },
-    {
-      title: "Task 4: Симуляція Трейдерів (Thread Pool) (1 бал)",
-      content: `
-Залишилося запустити нашу біржу і піддати її жорсткому стрес-тесту! 
-Ми використаємо \`ExecutorService\` (Пул потоків), щоб зімітувати 100 трейдерів, які одночасно відправляють ордери.
 
-\`\`\`java
-import java.util.Random;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
-
-public class Main {
-    public static void main(String[] args) throws InterruptedException {
-        OrderBook orderBook = new OrderBook();
-        Random random = new Random();
-        
-        // Tworzymy pulę 20 wątków roboczych (20 jednoczesnych traderów)
-        ExecutorService executor = Executors.newFixedThreadPool(20);
-
-        System.out.println("Giełda otwarta. Rozpoczynamy handel...");
-
-        // Zlecenie 1000 losowych operacji
-        for (int i = 0; i < 1000; i++) {
-            executor.submit(() -> {
-                OrderType type = random.nextBoolean() ? OrderType.BUY : OrderType.SELL;
-                // Generujemy cenę między 90.0 a 110.0
-                double price = 90.0 + (random.nextDouble() * 20.0);
-                
-                Order order = OrderFactory.createOrder(type, Math.round(price * 100.0) / 100.0, 1);
-                orderBook.submitOrder(order);
-            });
-        }
-
-        // Zamykamy przyjmowanie nowych zadań
-        executor.shutdown();
-        
-        // Czekamy maksymalnie 10 sekund na zakończenie wszystkich operacji
-        executor.awaitTermination(10, TimeUnit.SECONDS);
-
-        System.out.println("Giełda zamknięta.");
-        System.out.println("Ostatnia cena transakcyjna: " + orderBook.getLastTradedPrice());
-        
-        // Jeśli dojdziesz do tego miejsca i nie zobaczysz żadnego błędu w konsoli, 
-        // to znaczy, że poprawnie zsynchronizowałeś współdzielony stan!
-    }
-}
-\`\`\`
+* \`save\`: \`prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)\` і \`getGeneratedKeys()\`.
+* Порушення \`UNIQUE\` (дублікат PESEL) → \`DuplicateClientException\` (підклас \`DataAccessException\`). Розпізнавайте за \`SQLIntegrityConstraintViolationException\` або SQLState \`23505\`/\`23xxx\`.
+* Відображення рядка на об'єкт — в одному приватному методі \`map(ResultSet)\`.
+* Кожен метод бере **нове** з'єднання з \`DataSource\` і закриває його.
 
 > [!TIP]
-> Спробуйте заради експерименту закоментувати \`lock.lock()\` та \`lock.unlock()\` у методі \`submitOrder\`. Запустіть програму кілька разів. Ви побачите хаос: ордери губляться, транзакції дублюються, а консоль може вибухнути помилкою \`ConcurrentModificationException\`. Це і є **Race Condition**.
+> \`DataAccessException\` — unchecked: сервісний шар не повинен знати про \`SQLException\`. Так працює й Spring (\`org.springframework.dao.DataAccessException\`).
+`
+    },
+    {
+      title: "Етап 3: Транзакційний переказ (2 б.)",
+      content: `
+Реалізуйте \`transfer(from, to, amount)\` в \`JdbcClientRepository\` **в одній транзакції**:
+
+1. \`amount <= 0\` або \`from.equals(to)\` → \`IllegalArgumentException\` (ще до звернення до бази).
+2. Списати з \`from\`: \`UPDATE clients SET balance = balance - ? WHERE pesel = ? AND balance >= ?\`. Якщо змінено 0 рядків → \`InsufficientFundsException\` (або \`NoSuchClientException\`, якщо клієнта немає взагалі).
+3. Зарахувати на \`to\`. 0 рядків → \`NoSuchClientException\`.
+4. \`commit\`; за будь-якої помилки — \`rollback\` і повторне кидання.
+
+> [!IMPORTANT]
+> Умова \`balance >= ?\` в самому \`UPDATE\` робить перевірку і списання **атомарними** на рівні бази. Варіант «спочатку SELECT балансу, потім UPDATE» має гонку: два паралельні перекази можуть обидва побачити достатній баланс.
+
+### Наданий інтеграційний тест (фрагмент)
+
+\`\`\`java
+class JdbcClientRepositoryIT {
+    private ClientRepository repo;
+
+    @BeforeEach
+    void setUp() {
+        repo = new JdbcClientRepository(Database.h2InMemory("test-" + UUID.randomUUID()));   // свіжа база
+        repo.save(new Client(null, "44051401359", "Jan Kowalski", new BigDecimal("100.00")));
+        repo.save(new Client(null, "02070803628", "Anna Nowak", new BigDecimal("20.00")));
+    }
+
+    @Test
+    void transferMovesMoney() {
+        repo.transfer("44051401359", "02070803628", new BigDecimal("30.00"));
+        assertThat(repo.findByPesel("44051401359")).get().extracting(Client::balance).isEqualTo(new BigDecimal("70.00"));
+        assertThat(repo.findByPesel("02070803628")).get().extracting(Client::balance).isEqualTo(new BigDecimal("50.00"));
+    }
+
+    @Test
+    void failedTransferChangesNothing() {
+        assertThatThrownBy(() -> repo.transfer("44051401359", "99999999999", new BigDecimal("30.00")))
+                .isInstanceOf(NoSuchClientException.class);
+        assertThat(repo.findByPesel("44051401359")).get()
+                .extracting(Client::balance).isEqualTo(new BigDecimal("100.00"));   // rollback!
+    }
+
+    @Test
+    void duplicatePeselIsRejected() {
+        assertThatThrownBy(() -> repo.save(new Client(null, "44051401359", "Хтось", BigDecimal.ZERO)))
+                .isInstanceOf(DuplicateClientException.class);
+    }
+}
+\`\`\`
+
+> [!WARNING]
+> \`BigDecimal.equals\` враховує масштаб: \`70.0\` ≠ \`70.00\`. Значення з бази \`NUMERIC(15,2)\` має масштаб 2, тож порівнюйте з \`new BigDecimal("70.00")\` або через \`isEqualByComparingTo\`.
+`
+    },
+    {
+      title: "Етап 4: Сервіс і логування (2 б.)",
+      content: `
+\`\`\`java
+public class ClientService {
+    public ClientService(ClientRepository repository);
+
+    public Client register(String pesel, String fullName);   // дублікат -> DuplicateClientException
+    public Client deposit(String pesel, BigDecimal amount);   // amount > 0
+    public void transfer(String from, String to, BigDecimal amount);
+    public BigDecimal totalBalance();                         // сума по всіх клієнтах
+}
+\`\`\`
+
+* \`register\` спочатку перевіряє \`findByPesel\` (зрозуміле повідомлення для користувача), а \`UNIQUE\` у базі — остання лінія захисту від гонки.
+* \`fullName\` нормалізується: \`strip()\` і стискання кількох пробілів в один.
+* Логування (\`src/main/resources/logback.xml\` з патерном \`%d{HH:mm:ss} %-5level %logger{20} - %msg%n\`):
+  * \`INFO\` — успішна реєстрація/переказ (PESEL лише через \`Pesel.mask\`);
+  * \`WARN\` — бізнес-відмова (бракує коштів, дублікат);
+  * \`ERROR\` з винятком — неочікувана \`DataAccessException\`;
+  * \`DEBUG\` — деталі (суми, тривалість операції).
+
+> [!NOTE]
+> Чому \`WARN\`, а не \`ERROR\` для «бракує коштів»? Це очікувана бізнес-ситуація, і система спрацювала правильно. \`ERROR\` означає, що комусь треба втрутитися. Якщо позначати як \`ERROR\` кожну відмову, справжні аварії загубляться серед них.
+`
+    },
+    {
+      title: "Етап 5: Модульні тести з Mockito (2 б.)",
+      content: `
+Напишіть \`ClientServiceTest\` **без бази даних**: \`ClientRepository\` — mock. Мінімум:
+
+\`\`\`java
+@ExtendWith(MockitoExtension.class)
+class ClientServiceTest {
+    @Mock ClientRepository repo;
+    @InjectMocks ClientService service;
+    @Captor ArgumentCaptor<Client> clientCaptor;
+
+    @Test
+    void registerSavesNormalizedName() {
+        when(repo.findByPesel("44051401359")).thenReturn(Optional.empty());
+        when(repo.save(any())).thenAnswer(inv -> {
+            Client c = inv.getArgument(0);
+            return new Client(1L, c.pesel(), c.fullName(), c.balance());
+        });
+
+        Client saved = service.register("44051401359", "  Jan   Kowalski ");
+
+        verify(repo).save(clientCaptor.capture());
+        assertThat(clientCaptor.getValue().fullName()).isEqualTo("Jan Kowalski");
+        assertThat(saved.id()).isEqualTo(1L);
+    }
+
+    @Test
+    void registerRejectsDuplicateWithoutSaving() { /* findByPesel -> Optional.of(...) ; verify(repo, never()).save(any()) */ }
+
+    @Test
+    void transferRejectsNonPositiveAmountWithoutTouchingRepository() { /* verifyNoInteractions(repo) */ }
+
+    @Test
+    void totalBalanceSumsAllClients() { /* when(repo.findAll()).thenReturn(List.of(...)) */ }
+
+    @Test
+    void depositPropagatesUnexpectedDataAccessError() { /* thenThrow(new DataAccessException(...)) */ }
+}
+\`\`\`
+
+* Кожен тест перевіряє **одну поведінку** і має назву, що її описує.
+* Тести модуля сервісу мають виконуватися за мілісекунди: жодного H2 у цьому класі.
+
+> [!TIP]
+> Якщо для тесту потрібно 10 рядків \`when(...)\`, це сигнал, що сервіс робить забагато або тест перевіряє реалізацію, а не поведінку. Альтернатива моку — простий **fake**: \`InMemoryClientRepository\` на \`HashMap\`.
+
+Закомітьте, позначте тегом \`lab10\` і запуште. Код цієї лабораторної знадобиться в лабораторній 12.
 `
     }
   ],
   quiz: [
     {
-      question: "Dlaczego w klasie OrderFactory zastosowano AtomicLong (metodę getAndIncrement()) zamiast zwykłego 'long id = 0; id++;'?",
+      question: "Чому списання робиться одним UPDATE ... WHERE balance >= ?, а не SELECT + перевірка в Java + UPDATE?",
       options: [
-        "Ponieważ AtomicLong pozwala na przechowywanie większych liczb niż zwykły typ prymitywny long.",
-        "Operacja 'id++' składa się pod maską z 3 kroków: odczyt, dodanie, zapis. Gdy 100 wątków wykonuje to jednocześnie, nadpisują swoje wyniki. AtomicLong wykonuje to jako jedną, nierozerwalną operację procesora (CAS - Compare-And-Swap).",
-        "Zwykły long nie może być używany w statycznych metodach interfejsów.",
-        "Jest to wymóg interfejsu ExecutorService do rozróżniania zadań."
+        "Так коротше",
+        "Перевірка й зміна стають атомарними в базі; між SELECT і UPDATE паралельний переказ міг би змінити баланс",
+        "SELECT не працює в транзакціях",
+        "Так вимагає H2"
       ],
       answer: 1,
-      explanation: "Race Condition na licznikach to klasyczny błąd. Dwa wątki mogą odczytać id=5 w tym samym ułamku sekundy, oba zwiększą go do 6 i zapiszą. W efekcie jeden ID zaginie. AtomicLong temu zapobiega bez użycia powolnych 'locków'."
+      explanation: "Це check-then-act на рівні бази. Умова в UPDATE і перевірка кількості змінених рядків усувають гонку."
     },
     {
-      question: "Dlaczego zwalnianie zamka (lock.unlock()) BEZWZGLĘDNIE musi znajdować się w bloku 'finally'?",
+      question: "Чому репозиторій кидає unchecked DataAccessException замість SQLException?",
       options: [
-        "Ponieważ kompilator Javy nie skompiluje kodu, jeśli lock.unlock() jest w zwykłym bloku try.",
-        "Blok finally wywołuje się zawsze. Jeśli np. metoda add() w kolekcji rzuci NullPointerException i aplikacja przerwie działanie, zamek w finally i tak zostanie zwolniony. Gdybyśmy nie użyli finally, zamek zostałby zamknięty na zawsze, powodując Deadlock całego serwera.",
-        "Ponieważ blok finally wykonuje się asynchronicznie, co przyspiesza działanie aplikacji.",
-        "Zamek sam zwalnia się po 3 sekundach, finally po prostu robi to natychmiast."
+        "SQLException застарів",
+        "Щоб сервісний шар не залежав від деталей JDBC: він працює з інтерфейсом ClientRepository, і реалізація може бути будь-якою",
+        "Unchecked-винятки швидші",
+        "Mockito не підтримує checked-винятки"
       ],
       answer: 1,
-      explanation: "Jest to złota zasada Javy. ReentrantLock nie ma wbudowanego timeoutu. Zgubienie (niezwolnienie) zamka to jeden z najtrudniejszych do znalezienia błędów krytycznych na produkcji."
+      explanation: "Абстракція не повинна «протікати»: SQLException у сигнатурі інтерфейсу прив'язав би його до JDBC."
     },
     {
-      question: "Co daje słowo kluczowe 'volatile' przy zmiennej 'lastTradedPrice'?",
+      question: "Що перевіряє verify(repo, never()).save(any())?",
       options: [
-        "Sprawia, że zmienna jest tylko do odczytu (odpowiednik słowa 'final' w nowoczesnej Javie).",
-        "Chroni przed sytuacją, w której dwa wątki jednocześnie próbują przypisać wartość, działając jak mutex (blokada).",
-        "Gwarantuje, że gdy jeden wątek zmodyfikuje tę wartość, zmiana ta zostanie od razu zapisana do pamięci RAM głównej (a nie tylko do lokalnej pamięci cache procesora L1/L2), przez co inne wątki od razu zobaczą nową wartość.",
-        "Zwiększa szybkość operacji arytmetycznych na tej zmiennej poprzez kompilację JIT."
+        "Що save повертає null",
+        "Що метод save жодного разу не викликали",
+        "Що save кинув виняток",
+        "Що save викликали з null"
       ],
-      answer: 2,
-      explanation: "Słowo 'volatile' rozwiązuje problem 'Widoczności' (Visibility) w Java Memory Model. Zmusza wątki do pobierania zawsze świeżej wartości bezpośrednio z Main Memory. NIE chroni jednak przed Race Conditions (jak Atomic)."
+      answer: 1,
+      explanation: "Так перевіряють, що, наприклад, дублікат не збережено. Варто перевіряти і результат, і відсутність побічних ефектів."
     },
     {
-      question: "Jaka jest różnica między użyciem 'ReentrantLock', a starszym słowem kluczowym 'synchronized'?",
+      question: "Чому в логах PESEL маскується?",
       options: [
-        "Nie ma żadnej różnicy, ReentrantLock to tylko nowsza nazwa na synchronized z Javy 8.",
-        "synchronized jest znacznie szybsze i nie blokuje wątków, natomiast ReentrantLock jest operacją wejścia/wyjścia.",
-        "ReentrantLock pozwala m.in. na spróbowanie założenia zamka (tryLock()), które nie zawiesza wątku na wieki jeśli zamek jest zajęty, oraz pozwala na zakładanie i zwalnianie zamka w różnych metodach. synchronized jest prostsze, ale zablokowane na jednym bloku.",
-        "synchronized używamy tylko dla typów prostych (int, boolean), a ReentrantLock dla obiektów."
+        "Щоб логи були коротшими",
+        "PESEL — персональні дані; логи читає багато людей і систем, і зберігаються вони довго (GDPR)",
+        "Logback не підтримує цифр",
+        "Так швидше"
       ],
-      answer: 2,
-      explanation: "Oba mechanizmy zapewniają tzw. Mutual Exclusion (wzajemne wykluczanie). Jednak ReentrantLock z pakietu java.util.concurrent.locks daje programiście 'manualną' i znacznie bardziej elastyczną kontrolę nad blokadą."
+      answer: 1,
+      explanation: "Для діагностики досить кількох останніх цифр. Повний ідентифікатор у логах був би витоком персональних даних."
     }
   ]
 };

@@ -1,0 +1,7 @@
+CREATE TABLE IF NOT EXISTS clients (
+    id         BIGINT AUTO_INCREMENT PRIMARY KEY,
+    pesel      CHAR(11)      NOT NULL UNIQUE,
+    full_name  VARCHAR(200)  NOT NULL,
+    balance    NUMERIC(15,2) NOT NULL DEFAULT 0 CHECK (balance >= 0),
+    created_at TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

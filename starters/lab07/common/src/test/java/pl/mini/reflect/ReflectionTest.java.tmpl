@@ -1,0 +1,175 @@
+package pl.mini.reflect;
+
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+import pl.mini.reflect.json.Json;
+import pl.mini.reflect.json.JsonIgnore;
+import pl.mini.reflect.json.JsonName;
+import pl.mini.reflect.plugins.Plugin;
+import pl.mini.reflect.plugins.PluginRegistry;
+import pl.mini.reflect.proxy.Cacheable;
+import pl.mini.reflect.proxy.Proxies;
+import pl.mini.reflect.testing.Assert;
+import pl.mini.reflect.testing.BeforeEach;
+import pl.mini.reflect.testing.TestReport;
+import pl.mini.reflect.testing.TestRunner;
+
+import java.util.*;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+class ReflectionTest {
+
+    // ---------- fixtures for the test runner ----------
+
+    public static class Counting {
+        static int instances;
+        public Counting() { instances++; }
+        @pl.mini.reflect.testing.Test void a() { }
+        @pl.mini.reflect.testing.Test void b() { }
+        @pl.mini.reflect.testing.Test void c() { }
+    }
+
+    public static class BrokenSetUp {
+        @BeforeEach void setUp() { throw new IllegalStateException("no db"); }
+        @pl.mini.reflect.testing.Test void t() { }
+    }
+
+    public static class WrongException {
+        @pl.mini.reflect.testing.Test(expected = ArithmeticException.class)
+        void t() { throw new IllegalArgumentException("x"); }
+
+        @pl.mini.reflect.testing.Test(expected = RuntimeException.class)
+        void subclassIsOk() { throw new IllegalStateException(); }
+    }
+
+    // ===== STAGE 1 =====
+
+    @Test
+    @Tag("stage1")
+    void eachTestGetsAFreshInstance() {
+        Counting.instances = 0;
+        TestReport r = TestRunner.run(Counting.class);
+        assertEquals(3, Counting.instances);
+        assertEquals(3, r.passed());
+        assertEquals(List.of("✓ a", "✓ b", "✓ c"), r.lines());
+    }
+
+    @Test
+    @Tag("stage1")
+    void assertEqualUsesObjectsEquals() {
+        assertDoesNotThrow(() -> Assert.equal(null, null));
+        assertDoesNotThrow(() -> Assert.equal(List.of(1), new ArrayList<>(List.of(1))));
+        AssertionError e = assertThrows(AssertionError.class, () -> Assert.equal("a", "b"));
+        assertEquals("{{assertMsg}}".formatted("a", "b"), e.getMessage());
+    }
+
+    @Test
+    @Tag("stage1")
+    void reportToStringEndsWithSummaryLine() {
+        TestReport r = new TestReport(1, 0, 0, List.of("✓ x"));
+        assertEquals("✓ x\n{{summary}}\n".formatted(1, 0, 0), r.toString());
+    }
+
+    // ===== STAGE 2 =====
+
+    @Test
+    @Tag("stage2")
+    void failureInBeforeEachFailsTheTest() {
+        TestReport r = TestRunner.run(BrokenSetUp.class);
+        assertEquals(1, r.failed());
+        assertEquals(1, r.lines().size());
+        String line = r.lines().get(0);
+        assertTrue(line.startsWith("✗ t: {{beforeEachErr}}") && line.contains("no db"), line);
+    }
+
+    @Test
+    @Tag("stage2")
+    void wrongOrSubclassException() {
+        TestReport r = TestRunner.run(WrongException.class);
+        assertEquals(List.of("✓ subclassIsOk", "✗ t: {{expectedEx}}ArithmeticException{{gotEx}}IllegalArgumentException"), r.lines());
+        assertEquals(1, r.passed());
+        assertEquals(1, r.failed());
+    }
+
+    // ===== STAGE 3 =====
+
+    record Inner(@JsonName("v") int value) { }
+    record Outer(String text, @JsonIgnore String hidden, Inner inner, Map<String, Object> extra, char letter) { }
+
+    @Test
+    @Tag("stage3")
+    void escapesAndNestedValues() {
+        Map<String, Object> extra = new LinkedHashMap<>();
+        extra.put("ok", true);
+        extra.put("list", new Object[]{1.5, null});
+        String json = Json.write(new Outer("a\\b\n\"c\"", "secret", new Inner(7), extra, 'z'));
+        assertEquals("{\"text\":\"a\\\\b\\n\\\"c\\\"\",\"inner\":{\"v\":7},\"extra\":{\"ok\":true,\"list\":[1.5,null]},\"letter\":\"z\"}", json);
+    }
+
+    @Test
+    @Tag("stage3")
+    void topLevelValues() {
+        assertEquals("null", Json.write(null));
+        assertEquals("[]", Json.write(List.of()));
+        assertEquals("42", Json.write(42));
+    }
+
+    // ===== STAGE 4 =====
+
+    @Test
+    @Tag("stage4")
+    void pipelineRejectsUnknownName() {
+        PluginRegistry reg = PluginRegistry.load(List.of(Main.UpperPlugin.class.getName()));
+        assertThrows(IllegalArgumentException.class, () -> reg.pipeline("upper", "nope"));
+        assertEquals(List.of(), reg.errors());
+    }
+
+    @Test
+    @Tag("stage4")
+    void pipelineAppliesInTheGivenOrder() {
+        PluginRegistry reg = PluginRegistry.load(List.of(Main.ReversePlugin.class.getName(), Main.UpperPlugin.class.getName()));
+        assertEquals("CBA", reg.pipeline("reverse", "upper").apply("abc"));
+        assertEquals(List.of("reverse", "upper"), reg.plugins().stream().map(Plugin::name).toList());
+    }
+
+    // ===== STAGE 5 =====
+
+    public interface Calc {
+        @Cacheable int square(int x);
+        int fail();
+    }
+
+    @Test
+    @Tag("stage5")
+    void loggingRethrowsTheOriginalException() {
+        Calc real = new Calc() {
+            public int square(int x) { return x * x; }
+            public int fail() { throw new IllegalStateException("original"); }
+        };
+        List<String> log = new ArrayList<>();
+        Calc c = Proxies.logging(real, Calc.class, log);
+        IllegalStateException e = assertThrows(IllegalStateException.class, c::fail);
+        assertEquals("original", e.getMessage());
+        assertEquals(List.of("fail() !! IllegalStateException"), log);
+    }
+
+    @Test
+    @Tag("stage5")
+    void cachedDoesNotCacheExceptionsOrObjectMethods() {
+        int[] calls = {0};
+        Calc real = new Calc() {
+            public int square(int x) { calls[0]++; if (x < 0) throw new IllegalArgumentException(); return x * x; }
+            public int fail() { return 0; }
+            @Override public String toString() { return "real-calc"; }
+        };
+        Calc c = Proxies.cached(real, Calc.class);
+        assertEquals(9, c.square(3));
+        assertEquals(9, c.square(3));
+        assertEquals(1, calls[0]);
+        assertThrows(IllegalArgumentException.class, () -> c.square(-1));
+        assertThrows(IllegalArgumentException.class, () -> c.square(-1));
+        assertEquals(3, calls[0]);
+        assertEquals("real-calc", c.toString());
+    }
+}

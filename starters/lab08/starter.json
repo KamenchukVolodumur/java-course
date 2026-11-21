@@ -1,0 +1,18 @@
+{
+  "readme": {
+    "title": { "ua": "Лабораторна 08: Біржовий стакан", "en": "Lab 08: An Exchange Order Book" },
+    "jdk": 21,
+    "files": [
+      { "names": ["Main.java"], "status": "main" },
+      { "names": ["Side", "Trade"], "status": "given" },
+      { "names": ["Order", "BookSnapshot", "Counters", "OrderBook", "Simulation", "RiskService"], "status": "yours" },
+      { "names": ["src/test/java/..."], "status": "tests" }
+    ],
+    "mains": ["pl.mini.exchange.Main"],
+    "stages": ["stage1", "stage2", "stage3", "stage4", "stage5"],
+    "notes": {
+      "ua": "> Проєкт налаштовано на Java 21 (віртуальні потоки в етапі 5). На Java 17 змініть `maven.compiler.release` у `pom.xml` на 17 і в `Main` замініть `newVirtualThreadPerTaskExecutor()` на `newCachedThreadPool()`.\n>\n> Тести на гонки ловлять помилки з великою ймовірністю, але не гарантовано: зелений тест — не доказ потокобезпечності.",
+      "en": "> The project targets Java 21 (virtual threads in stage 5). On Java 17 change `maven.compiler.release` in `pom.xml` to 17 and replace `newVirtualThreadPerTaskExecutor()` with `newCachedThreadPool()` in `Main`.\n>\n> The race tests catch errors with a high probability, but not with certainty: a green test is not a proof of thread safety."
+    }
+  }
+}

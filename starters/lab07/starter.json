@@ -1,0 +1,34 @@
+{
+  "messages": {
+    "forStage": { "ua": "для етапу", "en": "for stage" },
+    "helperMsg": { "ua": "helper не є тестом", "en": "helper is not a test" },
+    "boom": { "ua": "бум", "en": "boom" },
+    "anna": { "ua": "Анна", "en": "Anna" },
+    "warsaw": { "ua": "Варшава", "en": "Warsaw" },
+    "disabled": { "ua": "вимкнено", "en": "disabled" },
+    "summary": { "ua": "Пройдено: %d, провалено: %d, пропущено: %d", "en": "Passed: %d, failed: %d, skipped: %d" },
+    "expectedEx": { "ua": "очікувався ", "en": "expected " },
+    "gotEx": { "ua": ", отримано ", "en": ", got " },
+    "assertMsg": { "ua": "очікувалось %s, отримано %s", "en": "expected %s, got %s" },
+    "beforeEachErr": { "ua": "помилка в @BeforeEach: ", "en": "error in @BeforeEach: " },
+    "unsupported": { "ua": "непідтримуваний тип: ", "en": "unsupported type: " },
+    "notPlugin": { "ua": "не реалізує Plugin", "en": "does not implement Plugin" },
+    "noCtor": { "ua": "немає публічного конструктора без параметрів", "en": "no public parameterless constructor" },
+    "notFound": { "ua": "клас не знайдено", "en": "class not found" }
+  },
+  "readme": {
+    "title": { "ua": "Лабораторна 07: Анотації та рефлексія", "en": "Lab 07: Annotations and Reflection" },
+    "files": [
+      { "names": ["Main.java"], "status": "main" },
+      { "names": ["plugins/Plugin"], "status": "given" },
+      { "names": ["testing/*", "json/*", "plugins/PluginInfo", "plugins/PluginRegistry", "proxy/*"], "status": "yours" },
+      { "names": ["src/test/java/..."], "status": "tests" }
+    ],
+    "mains": ["pl.mini.reflect.Main"],
+    "stages": ["stage1", "stage2", "stage3", "stage4", "stage5"],
+    "notes": {
+      "ua": "> Анотації (`@Test`, `@JsonName`, `@Cacheable` тощо) вже оголошені, але **без** `@Retention` і `@Target` — додайте їх самі. Поки їх немає, рефлексія анотацій не бачить, і тести це покажуть.",
+      "en": "> The annotations (`@Test`, `@JsonName`, `@Cacheable` etc.) are already declared, but **without** `@Retention` and `@Target` — add them yourself. Until you do, reflection does not see the annotations, and the tests will show it."
+    }
+  }
+}

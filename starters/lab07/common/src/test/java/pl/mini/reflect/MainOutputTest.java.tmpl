@@ -1,0 +1,95 @@
+package pl.mini.reflect;
+
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+import pl.mini.reflect.Main.*;
+import pl.mini.reflect.json.Json;
+import pl.mini.reflect.plugins.PluginRegistry;
+import pl.mini.reflect.proxy.Proxies;
+import pl.mini.reflect.testing.TestRunner;
+
+import java.util.ArrayList;
+import java.util.List;
+
+import static pl.mini.testkit.Console.assertPrints;
+
+/** Runs the same code as the STAGE blocks in Main and compares the output with the task. */
+class MainOutputTest {
+
+    @Test
+    @Tag("stage1")
+    void stage1() {
+        assertPrints("""
+                ✓ addsElement
+                ✓ freshDataEachTime
+                - notReady ({{disabled}})
+                {{summary}}
+                """.formatted(2, 0, 1), () -> System.out.print(TestRunner.run(BasicTests.class)));
+    }
+
+    @Test
+    @Tag("stage2")
+    void stage2() {
+        assertPrints("""
+                ✗ crashes: IllegalStateException: {{boom}}
+                ✓ dividesByZero
+                ✗ expectedButNotThrown: {{expectedEx}}IllegalStateException
+                ✗ wrongSum: {{assertMsg}}
+                {{summary}}
+                """.formatted(7, 6, 1, 3, 0), () -> System.out.print(TestRunner.run(TrickyTests.class)));
+    }
+
+    @Test
+    @Tag("stage3")
+    void stage3() {
+        assertPrints("""
+                {"name":"{{anna}}","age":21,"address":{"city":"{{warsaw}}","zip_code":"00-661"},"tags":["java","kotlin"],"score":null}
+                ["say \\"hi\\"",1,true]
+                OK: {{unsupported}}java.lang.Object
+                """, () -> {
+            System.out.println(Json.write(new Person("{{anna}}", 21, "secret",
+                    new Address("{{warsaw}}", "00-661"), List.of("java", "kotlin"), null)));
+            System.out.println(Json.write(List.of("say \"hi\"", 1, true)));
+            try { Json.write(new Object()); }
+            catch (IllegalArgumentException e) { System.out.println("OK: " + e.getMessage()); }
+        });
+    }
+
+    @Test
+    @Tag("stage4")
+    void stage4() {
+        assertPrints("""
+                NotAPlugin: {{notPlugin}}
+                NoDefaultCtor: {{noCtor}}
+                pl.mini.Missing: {{notFound}}
+                reverse v?
+                upper v1.2
+                AVAJ
+                """, () -> {
+            String p = Main.class.getName() + "$";
+            PluginRegistry reg = PluginRegistry.load(List.of(p + "UpperPlugin", p + "ReversePlugin",
+                    p + "NotAPlugin", p + "NoDefaultCtor", "pl.mini.Missing"));
+            reg.errors().forEach(System.out::println);
+            reg.plugins().forEach(pl -> System.out.println(pl.name() + " v" + reg.version(pl)));
+            System.out.println(reg.pipeline("upper", "reverse").apply("Java"));
+        });
+    }
+
+    @Test
+    @Tag("stage5")
+    void stage5() {
+        assertPrints("""
+                2 [price(tea) -> 4.5, price(coffee) -> 9.0, hello(Ola) -> Hi Ola, hello(Ola) -> Hi Ola]
+                OK: NPE, price(null) !! NullPointerException
+                """, () -> {
+            SlowPriceService real = new SlowPriceService();
+            List<String> log = new ArrayList<>();
+            PriceService svc = Proxies.cached(Proxies.logging(real, PriceService.class, log), PriceService.class);
+            svc.price("tea"); svc.price("tea"); svc.price("coffee");
+            svc.hello("Ola"); svc.hello("Ola");
+            System.out.println(real.calls + " " + log);
+            try { svc.price(null); }
+            catch (NullPointerException e) { System.out.println("OK: NPE, " + log.get(log.size() - 1)); }
+        });
+    }
+}

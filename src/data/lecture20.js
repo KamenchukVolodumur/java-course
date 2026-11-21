@@ -1,149 +1,223 @@
 export const lecture20 = {
   id: "20",
-  title: "Wykład 20: Podstawy Konteneryzacji (Docker) dla Java Developera",
-  description: "Zrozumienie, czym jest Docker, jak stworzyć obraz aplikacji w Javie i uruchomić ją razem z bazą danych przy użyciu Docker Compose.",
+  title: "Лекція 20: Контейнеризація (Docker) для Java-розробника",
+  description: "Що таке Docker і чим контейнер відрізняється від віртуальної машини, Dockerfile для Java-застосунку, багатоетапне збирання, кешування шарів, JVM у контейнері, Docker Compose з базою даних, змінні середовища і healthcheck.",
   sections: [
     {
-      title: "1. Czym jest Docker i dlaczego zrewolucjonizował Backend?",
+      title: "1. Що таке Docker і навіщо він",
       content: `
-Kiedyś proces wdrażania (Deployment) aplikacji wyglądał tak: programista kompilował plik \`.jar\`, wysyłał go adminowi, a admin ręcznie instalował Javę, konfigurował ścieżki i odpalał projekt na serwerze. Często kończyło się to słynnym stwierdzeniem: *"Ale u mnie na komputerze to działało!"* (tzw. "It works on my machine" problem).
+Раніше розгортання виглядало так: розробник збирав \`.jar\`, передавав його адміністратору, а той вручну встановлював потрібну версію Java, налаштовував шляхи і запускав застосунок на сервері. Часто все закінчувалося фразою *«А в мене на комп'ютері працювало!»*.
 
-**Docker** rozwiązuje to poprzez pakowanie aplikacji wraz z całym jej otoczeniem (zależnościami, systemem operacyjnym, a nawet wbudowaną Javą) w przenośny paczkę zwaną **Kontenerem**.
+**Docker** пакує застосунок разом з усім оточенням (бібліотеки, файли ОС, потрібна версія JRE) у переносний **образ**. Запущений образ — це **контейнер**.
 
-### Główne pojęcia:
-1. **Dockerfile:** Skrypt (przepis), który mówi Dockerowi krok po kroku jak zainstalować system i aplikację.
-2. **Obraz (Image):** Zamrożony, niezmienny szablon, wygenerowany z Dockerfile'a (np. "System Linux Alpine + Java 21 + nasza aplikacja").
-3. **Kontener (Container):** Uruchomiona na żywo, odizolowana kopia Obrazu.
-`
-    },
-    {
-      title: "2. Piszemy Dockerfile dla aplikacji Java",
-      content: `
-Aby zapakować naszą skompilowaną aplikację do Dockera, musimy utworzyć plik o nazwie \`Dockerfile\` (bez żadnego rozszerzenia) w głównym katalogu projektu.
+| Поняття | Що це |
+| --- | --- |
+| **Dockerfile** | рецепт: покрокова інструкція побудови образу |
+| **Образ (image)** | незмінний шаблон з шарів, наприклад «Alpine Linux + JRE 21 + app.jar» |
+| **Контейнер** | запущений ізольований екземпляр образу |
+| **Реєстр (registry)** | сховище образів: Docker Hub, GitHub Container Registry |
+| **Том (volume)** | дані, що переживають видалення контейнера |
 
-Najprostsza wersja wygląda tak:
-\`\`\`dockerfile
-# 1. Wybierz obraz bazowy z zainstalowanym środowiskiem wykonawczym (JRE) Java 21
-FROM eclipse-temurin:21-jre-alpine
+### Контейнер vs віртуальна машина
 
-# 2. Skopiuj skompilowany plik JAR z Twojego komputera do wnętrza kontenera
-# Zakładamy, że zbudowałeś wcześniej projekt komendą 'mvn clean package'
-COPY target/my-app-1.0.0.jar /app.jar
+Віртуальна машина емулює все залізо і запускає **власне ядро ОС** (гігабайти, хвилини на старт). Контейнер — це звичайний процес на **спільному ядрі** хоста, ізольований механізмами Linux (namespaces — що процес бачить; cgroups — скільки ресурсів може використати). Він стартує за долі секунди й займає мегабайти.
 
-# 3. Odblokuj port, na którym nasłuchuje Twoja aplikacja (np. Spring Boot to 8080)
-EXPOSE 8080
-
-# 4. Zdefiniuj komendę uruchomieniową (co ma się stać przy starcie kontenera)
-ENTRYPOINT ["java", "-jar", "/app.jar"]
-\`\`\`
-
-Aby zbudować obraz na podstawie tego pliku, wykonujemy w terminalu:
 \`\`\`bash
-docker build -t my-java-app .
-\`\`\`
-A aby go uruchomić (mapując port komputera na port kontenera):
-\`\`\`bash
-docker run -p 8080:8080 my-java-app
+docker run --rm -it eclipse-temurin:21-jdk jshell     # Java 21 без встановлення
+docker ps                                              # запущені контейнери
+docker logs -f <id>                                    # логи
+docker exec -it <id> sh                                # оболонка всередині контейнера
+docker stop <id>
 \`\`\`
 `
     },
     {
-      title: "3. Multi-stage Build (Budowanie wieloetapowe)",
+      title: "2. Dockerfile для Java-застосунку",
       content: `
-Poprzedni przykład zakładał, że zbudowaliśmy \`.jar\` ręcznie za pomocą Mavena na naszym komputerze. W profesjonalnym środowisku CI/CD, to serwer sam musi pobrać kod i go skompilować. A jeśli na serwerze nie ma Mavena? 
-
-Rozwiązaniem jest **Multi-stage Build**. W jednym pliku Dockerfile robimy dwa etapy: w pierwszym używamy "ciężkiego" obrazu z pełnym JDK i Mavenem do zbudowania kodu, a w drugim tylko "lekkiego" obrazu (JRE) do jego uruchomienia.
+Найпростіший варіант: JAR уже зібрано локально (\`mvn package\`).
 
 \`\`\`dockerfile
-# ETAP 1: Budowanie (Build Stage)
-FROM maven:3.9.5-eclipse-temurin-21 AS build
-WORKDIR /app
-# Kopiujemy kod źródłowy z komputera do kontenera
-COPY pom.xml .
-COPY src ./src
-# Budujemy paczkę JAR w izolacji
-RUN mvn clean package -DskipTests
-
-# ETAP 2: Uruchomienie (Run Stage)
+# базовий образ з JRE 21 (без компілятора — менший і безпечніший)
 FROM eclipse-temurin:21-jre-alpine
+
 WORKDIR /app
-# Kopiujemy TYLKO skompilowany plik jar z ETAPU 1!
-# Dzięki temu w docelowym kontenerze nie mamy kodu źródłowego ani narzędzia Maven (mniej megabajtów, większe bezpieczeństwo)
-COPY --from=build /app/target/*.jar app.jar
+
+# скопіювати зібраний JAR усередину образу
+COPY target/my-app-1.0.0.jar app.jar
+
+# документуємо порт, який слухає застосунок
 EXPOSE 8080
+
+# не запускаємо від root
+RUN addgroup -S app && adduser -S app -G app
+USER app
+
 ENTRYPOINT ["java", "-jar", "app.jar"]
 \`\`\`
+
+\`\`\`bash
+docker build -t my-java-app:1.0 .
+docker run -d --name app -p 8080:8080 -e DB_URL=jdbc:postgresql://db:5432/shop my-java-app:1.0
+\`\`\`
+
+\`-p 8080:8080\` означає «порт хоста : порт контейнера». Без цього до застосунку ззовні не достукатися.
+
+> [!TIP]
+> Додайте файл \`.dockerignore\` (\`target/\`, \`.git/\`, \`.idea/\`), щоб не надсилати зайве в контекст збирання.
 `
     },
     {
-      title: "4. Docker Compose (Baza danych w 5 sekund)",
+      title: "3. Багатоетапне збирання і кешування шарів",
       content: `
-Kiedy pracujesz nad backendem, zazwyczaj potrzebujesz też bazy danych. Konfiguracja i instalacja MySQL lub PostgreSQL bezpośrednio w Windows/Mac to koszmar. 
+У CI-середовищі образ має збиратися з вихідного коду, і Maven на сервері може бути відсутній. **Multi-stage build**: перший етап з повним JDK і Maven збирає JAR, а другий, легкий, лише запускає його.
 
-Zamiast tego używamy **Docker Compose** – narzędzia, które pozwala uruchomić wiele powiązanych kontenerów za pomocą jednego polecenia. Konfigurację zapisujemy w pliku \`docker-compose.yml\`.
+\`\`\`dockerfile
+# ---------- етап 1: збирання ----------
+FROM maven:3.9-eclipse-temurin-21 AS build
+WORKDIR /src
+
+# спочатку лише pom.xml: шар із залежностями закешується,
+# доки pom.xml не зміниться
+COPY pom.xml .
+RUN mvn -q dependency:go-offline
+
+# тепер код (змінюється часто)
+COPY src ./src
+RUN mvn -q package -DskipTests
+
+# ---------- етап 2: запуск ----------
+FROM eclipse-temurin:21-jre-alpine
+WORKDIR /app
+COPY --from=build /src/target/*.jar app.jar
+USER 1000
+EXPOSE 8080
+ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75", "-jar", "app.jar"]
+\`\`\`
+
+Кожна інструкція створює **шар**. Якщо вхідні дані шару не змінилися, Docker бере його з кешу. Тому інструкції, що рідко змінюються (залежності), ставлять **вище**, а ті, що часто (код), — **нижче**. Підсумковий образ містить лише JRE і JAR, без вихідного коду та Maven.
+
+### JVM у контейнері
+
+* Сучасна JVM бачить ліміти cgroups (\`--memory=512m\`, \`--cpus=2\`). Розмір купи задавайте **відсотком**: \`-XX:MaxRAMPercentage=75\`, а не фіксованим \`-Xmx\`.
+* Пам'ять процесу — це не лише купа: є ще metaspace, стеки потоків і direct-буфери. Тому ліміт контейнера має бути помітно більшим за купу.
+* З одним CPU JVM обирає Serial GC (лекція 15).
+`
+    },
+    {
+      title: "4. Docker Compose: застосунок + база даних",
+      content: `
+Для розробки зазвичай потрібна ще й база даних. Встановлювати PostgreSQL безпосередньо в Windows/macOS незручно. **Docker Compose** запускає кілька пов'язаних контейнерів однією командою. Конфігурацію описує файл \`compose.yaml\`:
 
 \`\`\`yaml
-version: '3.8'
-
 services:
-  # To jest definicja naszej bazy danych
   db:
-    image: postgres:15-alpine
+    image: postgres:16-alpine
     environment:
-      POSTGRES_USER: admin
-      POSTGRES_PASSWORD: mysecretpassword
-      POSTGRES_DB: course_database
+      POSTGRES_USER: shop
+      POSTGRES_PASSWORD: \${DB_PASSWORD}        # з файлу .env (не комітимо!)
+      POSTGRES_DB: shop
     ports:
-      - "5432:5432" # Umożliwia Twojemu IntelliJ połączenie z bazą
+      - "5432:5432"                           # щоб IntelliJ / локальний застосунок бачили базу
     volumes:
-      # Wolumeny gwarantują, że dane nie znikną, gdy zamkniesz kontener
-      - postgres_data:/var/lib/postgresql/data
+      - pgdata:/var/lib/postgresql/data       # дані переживуть перезапуск
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro   # схема під час першого старту
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shop"]
+      interval: 5s
+      retries: 10
+
+  app:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      DB_URL: jdbc:postgresql://db:5432/shop  # "db" — ім'я сервісу як hostname
+      DB_USER: shop
+      DB_PASSWORD: \${DB_PASSWORD}
+    depends_on:
+      db:
+        condition: service_healthy            # чекати, доки база справді готова
 
 volumes:
-  postgres_data:
+  pgdata:
 \`\`\`
 
-Teraz, w tym samym katalogu, wpisujesz w terminal:
 \`\`\`bash
-docker-compose up -d
+docker compose up -d          # запустити все у фоні
+docker compose logs -f app
+docker compose down           # зупинити (том pgdata лишиться)
+docker compose down -v        # зупинити і видалити дані
 \`\`\`
-I po kilku sekundach masz gotową, pełnoprawną bazę PostgreSQL na własnym komputerze, bez żadnych instalacji. Twoja aplikacja Java połączy się z nią na adresie \`localhost:5432\`! To absolutny przełom w wygodzie pracy każdego dewelopera.
+
+> [!IMPORTANT]
+> Усередині мережі Compose контейнери звертаються один до одного **за ім'ям сервісу** (\`db:5432\`), а не через \`localhost\`. \`localhost\` усередині контейнера — це сам контейнер.
+
+### Конфігурація через змінні середовища
+
+\`\`\`java
+String url = System.getenv().getOrDefault("DB_URL", "jdbc:postgresql://localhost:5432/shop");
+String password = Objects.requireNonNull(System.getenv("DB_PASSWORD"), "DB_PASSWORD не задано");
+\`\`\`
+
+Той самий образ працює в dev, test і prod: змінюються лише змінні середовища (принцип 12-factor app).
 `
     }
   ],
   quiz: [
     {
-      question: "Co daje zastosowanie 'Multi-stage build' (dwóch klauzul FROM) w Dockerfile'u dla aplikacji Javowej?",
+      question: "Чим образ відрізняється від контейнера?",
       options: [
-        "Uruchamia dwie instancje aplikacji równolegle, zwiększając wydajność.",
-        "Pozwala skompilować kod źródłowy za pomocą pełnego obrazu JDK+Maven, a do końcowego, ostatecznego obrazu wkleić tylko wynikowy plik .jar na mały, lekki obraz (np. alpine-jre), oszczędzając miejsce i zwiększając bezpieczeństwo.",
-        "Kompiluje program najpierw pod architekturę Windows, a następnie Linux.",
-        "Tworzy obraz kompatybilny tylko z serwerami AWS."
+        "Це синоніми",
+        "Образ — незмінний шаблон, контейнер — запущений екземпляр образу",
+        "Контейнер — файл Dockerfile",
+        "Образ — запущений процес"
       ],
       answer: 1,
-      explanation: "Dzięki multi-stage build unikamy w końcowym obrazie (tym umieszczanym na produkcji) zbędnych narzędzi takich jak Maven, kompilator Javy (javac) oraz samego kodu źródłowego. Minimalizujemy rozmiar (np. z 500MB na 150MB) oraz luki w zabezpieczeniach."
+      explanation: "З одного образу можна запустити багато незалежних контейнерів, як із класу — багато об'єктів."
     },
     {
-      question: "Czym różni się Obraz (Image) Dockera od Kontenera (Container)?",
+      question: "Навіщо в multi-stage build копіювати pom.xml і завантажувати залежності ДО копіювання src?",
       options: [
-        "Są to synonimy, w dokumentacji można ich używać naprzemiennie.",
-        "Obraz to kod na GitHubie, a Kontener to skompilowany plik JAR.",
-        "Obraz to niezmienny 'przepis' / szablon wybudowany z Dockerfile. Kontener to faktyczna, uruchomiona na żywo w pamięci RAM instancja tego obrazu.",
-        "Obraz to struktura relacyjnej bazy danych, a Kontener to serwer Java."
-      ],
-      answer: 2,
-      explanation: "Image (obraz) przypomina definicję Klasy (np. definicja przepisu ciasta). Container (kontener) przypomina Obiekt (faktycznie upieczone z tego przepisu ciasto). Z jednego obrazu możesz odpalić 100 kontenerów na raz."
-    },
-    {
-      question: "Po co mapujemy porty w Dockerze (np. docker run -p 8080:8080)?",
-      options: [
-        "Aby powiedzieć Dockerowi, że obraz waży maksymalnie 8080 bajtów.",
-        "Ponieważ kontener działa w kompletnej izolacji od systemu hosta. Musimy wyraźnie połączyć port 8080 naszego komputera z portem 8080 nasłuchującym wewnątrz wyizolowanego kontenera.",
-        "Jest to hasło uwierzytelniające dla bazy danych wbudowanej w Docker.",
-        "Aby Java mogła komunikować się z logami systemowymi."
+        "Так вимагає Maven",
+        "Щоб шар із залежностями брався з кешу, доки не зміниться pom.xml; зміни коду тоді не змушують завантажувати бібліотеки заново",
+        "Щоб образ був більшим",
+        "Щоб тести виконалися швидше"
       ],
       answer: 1,
-      explanation: "Kontenery mają swoją wydzieloną, osobną sieć. Bez przekierowania (-p HOST:CONTAINER), próba wpisania w przeglądarce localhost:8080 po prostu odbiłaby się od zapory Dockera, ponieważ nic nie wychodzi na zewnątrz 'pudełka' automatycznie."
+      explanation: "Docker кешує шари за вмістом. Рідко змінювані кроки ставлять вище, часто змінювані — нижче."
+    },
+    {
+      question: "Як застосунок у контейнері app має звертатися до бази з сервісу db у Docker Compose?",
+      options: [
+        "localhost:5432",
+        "db:5432 — за іменем сервісу",
+        "127.0.0.1:5432",
+        "host.docker.internal"
+      ],
+      answer: 1,
+      explanation: "Compose створює спільну мережу з DNS за іменами сервісів. localhost у контейнері вказує на сам контейнер."
+    },
+    {
+      question: "Як краще задати розмір купи JVM у контейнері?",
+      options: [
+        "Завжди -Xmx8g",
+        "Відсотком від ліміту контейнера: -XX:MaxRAMPercentage=75",
+        "Не задавати і встановити --memory=unlimited",
+        "Через System.gc()"
+      ],
+      answer: 1,
+      explanation: "JVM бачить ліміт cgroups. Відсоток залишає місце для metaspace, стеків і direct-пам'яті й підлаштовується під різні ліміти."
+    },
+    {
+      question: "Навіщо том (volume) у сервісі бази даних?",
+      options: [
+        "Для швидкодії",
+        "Щоб дані зберігалися після зупинки або видалення контейнера",
+        "Для мережевого доступу",
+        "Він не потрібен"
+      ],
+      answer: 1,
+      explanation: "Файлова система контейнера тимчасова. Без тому база після docker compose down буде порожньою."
     }
   ]
 };

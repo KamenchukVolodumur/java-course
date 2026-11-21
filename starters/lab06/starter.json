@@ -1,0 +1,20 @@
+{
+  "messages": {
+    "unsafe": { "ua": "небезпечний запис в архіві: ", "en": "unsafe entry in the archive: " }
+  },
+  "readme": {
+    "title": { "ua": "Лабораторна 06: Аналізатор логів", "en": "Lab 06: A Log Analyzer" },
+    "files": [
+      { "names": ["Main.java"], "status": "main" },
+      { "names": ["Level", "LogEntry", "LogListener"], "status": "given" },
+      { "names": ["LogParser", "LogStats", "LogAnalyzer", "DirectoryAnalyzer", "ReportWriter", "LogWatcher"], "status": "yours" },
+      { "names": ["src/test/java/..."], "status": "tests" }
+    ],
+    "mains": ["pl.mini.logs.Main"],
+    "stages": ["stage1", "stage2", "stage3", "stage4", "stage5"],
+    "notes": {
+      "ua": "> `Main` і тести створюють тестові логи в тимчасовій папці самі. Тести не перевіряють заборону `Files.readAllLines` у `LogAnalyzer` — її перевіряє викладач.",
+      "en": "> `Main` and the tests create the sample logs in a temporary folder themselves. The tests do not check the ban on `Files.readAllLines` in `LogAnalyzer` — the instructor checks it."
+    }
+  }
+}

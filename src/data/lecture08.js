@@ -1,182 +1,342 @@
 export const lecture08 = {
   id: "08",
-  title: "Wykład 08: Javadoc, Wzorce Dopasowania (Pattern Matching) i Wątki",
-  description: "Omówienie braku przeciążania operatorów w Javie, tworzenia dokumentacji Javadoc, alternatyw dla dyrektyw preprocesora, nowoczesnego Pattern Matchingu oraz podstaw wielowątkowości (Threads).",
+  title: "Лекція 08: Javadoc, pattern matching і потоки (Thread)",
+  description: "Документування коду через Javadoc (аналог XML-коментарів C#), чим замінити директиви препроцесора, сучасне зіставлення зі зразком: instanceof, switch за типом, record patterns, guard-умови. Основи багатопотоковості: Thread, Runnable, життєвий цикл потоку, join, interrupt, daemon-потоки і перші гонки даних.",
   sections: [
     {
-      title: "1. Brak Przeciążania Operatorów & Javadoc",
+      title: "1. Javadoc",
       content: `
-### Przeciążanie Operatorów (Operator Overloading) w Javie:
-Java **nie wspiera** przeciążania operatorów (z wyjątkiem operatora \`+\` dla obiektów \`String\`). James Gosling podjął tę decyzję w celu uproszczenia składni i uniknięcia błędów, które często pojawiały się w języku C++ z powodu nieczytelnych przeciążeń.
-
-W Javie operacje na obiektach matematycznych (np. \`BigDecimal\`, \`BigInteger\`) wykonujemy za pomocą jawnych metod:
-\`\`\`java
-BigDecimal a = new BigDecimal("10.50");
-BigDecimal b = new BigDecimal("2.30");
-
-// Zamiast a + b:
-BigDecimal sum = a.add(b);
-
-// Zamiast a * b:
-BigDecimal product = a.multiply(b);
-\`\`\`
-
-### Dokumentacja Javadoc:
-Javadoc to oficjalny system generowania dokumentacji HTML z komentarzy w kodzie źródłowym. Komentarze Javadoc zaczynają się od \`/**\` i kończą na \`*/\`. Stosuje się w nich specjalne tagi:
+Аналог XML-коментарів \`///\` у C#. Коментар \`/** ... */\` перед класом або методом потрапляє в HTML-документацію (\`javadoc\`, \`mvn javadoc:javadoc\`) і в підказки IDE.
 
 \`\`\`java
 /**
- * Oblicza pole powierzchni koła.
+ * Рахунок у банку з підтримкою поповнень і зняття коштів.
+ * <p>
+ * Клас <b>не</b> є потокобезпечним.
  *
- * @param radius promień koła, musi być większy od zera
- * @return pole powierzchni koła jako double
- * @throws IllegalArgumentException jeśli promień jest mniejszy lub równy zero
- * @see <a href="https://pl.wikipedia.org/wiki/Ko%C5%82o">Koło w Wikipedii</a>
+ * @author Олена Коваль
+ * @since 1.2
+ * @see Transaction
  */
-public double calculateArea(double radius) {
-    if (radius <= 0) {
-        throw new IllegalArgumentException("Promień musi być dodatni!");
-    }
-    return Math.PI * radius * radius;
+public class Account {
+
+    /**
+     * Знімає кошти з рахунку.
+     *
+     * @param amount сума до зняття; має бути додатною
+     * @return залишок після операції
+     * @throws IllegalArgumentException якщо {@code amount <= 0}
+     * @throws InsufficientFundsException якщо на рахунку недостатньо коштів
+     * @see #deposit(BigDecimal)
+     */
+    public BigDecimal withdraw(BigDecimal amount) { ... }
 }
 \`\`\`
+
+| Тег | Аналог у C# XML-doc |
+| --- | --- |
+| перше речення опису | \`<summary>\` |
+| \`@param name\` | \`<param name="">\` |
+| \`@return\` | \`<returns>\` |
+| \`@throws Type\` | \`<exception cref="">\` |
+| \`{@link Class#method}\` | \`<see cref=""/>\` |
+| \`{@code x < y}\` | \`<c>\` |
+| \`@deprecated\` | \`[Obsolete]\` + опис |
+
+> [!TIP]
+> Від Java 23 (JEP 467) можна писати Javadoc у **Markdown** через коментарі \`///\`, зовсім як у C#.
 `
     },
     {
-      title: "2. Dyrektywy Preprocesora w Javie",
+      title: "2. Препроцесора немає: чим його замінити",
       content: `
-Java **nie posiada preprocesora** (nie ma dyrektyw takich jak \`#define\`, \`#ifdef\`, \`#if\` znanych z C/C++ czy C#). Wynika to z chęci uniknięcia uzależnienia kodu źródłowego od środowiska kompilacji oraz ułatwienia analizy kodu przez edytory (IDE).
+У Java немає \`#if DEBUG\`, \`#define\` чи \`#region\`. Типові задачі розв'язують інакше:
 
-W Javie funkcjonalności te realizuje się poprzez:
-1. **Flagi kompilatora i stałe logiczne**: Kompilator Javy automatycznie usuwa martwy kod (Dead Code Elimination) w przypadku stałych warunków w czasie kompilacji:
-   \`\`\`java
-   public static final boolean DEBUG = false;
-   
-   if (DEBUG) {
-       System.out.println("To wypisze się tylko w debugu"); // Kod ten zostanie usunięty z pliku .class!
-   }
-   \`\`\`
-2. **Profile Maven/Gradle**: Filtrowanie zasobów na etapie budowania (zastępowanie zmiennych w plikach \`.properties\` lub \`.xml\`).
-3. **Zmienne środowiskowe**: Sprawdzanie parametrów systemu operacyjnego w runtime (\`System.getProperty("os.name")\`).
-`
-    },
-    {
-      title: "3. Nowoczesny Pattern Matching (Dopasowanie do Wzorców)",
-      content: `
-W nowszych wersjach Javy (Java 16 do 21) wprowadzono mechanizmy **Pattern Matchingu**, które drastycznie zmniejszają boilerplate i zwiększają bezpieczeństwo kodu:
+| Задача в C# | Рішення в Java |
+| --- | --- |
+| \`#if DEBUG ... #endif\` | \`static final boolean DEBUG = false;\` + \`if (DEBUG)\`: компілятор викине мертвий код |
+| Різні конфігурації збирання | профілі Maven/Gradle, змінні середовища, \`System.getProperty("env")\` |
+| \`[Conditional("DEBUG")]\` | рівні логування: \`log.debug(...)\` вимикається конфігурацією |
+| \`Debug.Assert\` | \`assert x > 0 : "повідомлення";\`, працює лише з прапорцем \`java -ea\` |
+| Генерація коду | процесори анотацій (лекція 14), Lombok, MapStruct |
+| \`#region\` | \`// region ... // endregion\` (розуміє IntelliJ) |
 
-### 1. Pattern Matching dla instanceof (Java 16):
-Tradycyjne rzutowanie typu:
 \`\`\`java
+public final class Config {
+    public static final boolean DEBUG = Boolean.getBoolean("app.debug");  // -Dapp.debug=true
+}
+
+if (Config.DEBUG) {
+    System.err.println("стан: " + state);
+}
+
+assert balance >= 0 : "баланс не може бути від'ємним: " + balance;
+\`\`\`
+
+> [!WARNING]
+> \`assert\` за замовчуванням **вимкнені**. Не використовуйте їх для перевірки аргументів публічних методів: для цього є \`IllegalArgumentException\` і \`Objects.requireNonNull\`.
+`
+    },
+    {
+      title: "3. Pattern matching: instanceof і switch",
+      content: `
+### instanceof з прив'язкою змінної (Java 16)
+
+\`\`\`java
+// раніше
 if (obj instanceof String) {
-    String s = (String) obj; // Ręczne rzutowanie
-    System.out.println(s.toUpperCase());
+    String s = (String) obj;
+    System.out.println(s.length());
+}
+
+// тепер
+if (obj instanceof String s && !s.isEmpty()) {
+    System.out.println(s.length());
+}
+
+if (!(obj instanceof Point p)) return;
+System.out.println(p.x());          // p доступна після заперечної перевірки
+\`\`\`
+
+### switch за типом (Java 21)
+
+\`\`\`java
+static String describe(Object o) {
+    return switch (o) {
+        case null -> "null";                                 // без цієї гілки буде NPE
+        case Integer i when i < 0 -> "від'ємне ціле";        // guard-умова (when)
+        case Integer i -> "ціле " + i;
+        case String s when s.isBlank() -> "порожній рядок";
+        case String s -> "рядок: " + s;
+        case int[] arr -> "масив довжини " + arr.length;
+        default -> "невідомо: " + o.getClass().getSimpleName();
+    };
 }
 \`\`\`
-Nowoczesne dopasowanie:
+
+* Гілки перевіряються **по черзі**. Компілятор повідомить, якщо гілка недосяжна (наприклад, \`case Integer i\` стоїть перед \`case Integer i when ...\`).
+* Відповідність C#: \`when\` ↔ \`when\`, \`case Integer i\` ↔ \`case int i\`.
+
+### Record patterns (Java 21)
+
+Записи можна **деконструювати** прямо в шаблоні, зокрема вкладено:
+
 \`\`\`java
-if (obj instanceof String s) { // Zmienna 's' jest automatycznie zrzutowana i dostępna w tym bloku
-    System.out.println(s.toUpperCase());
+sealed interface Expr permits Num, Add, Mul, Neg { }
+record Num(int value) implements Expr { }
+record Add(Expr left, Expr right) implements Expr { }
+record Mul(Expr left, Expr right) implements Expr { }
+record Neg(Expr e) implements Expr { }
+
+static int eval(Expr e) {
+    return switch (e) {                     // default не потрібен: Expr sealed
+        case Num(int v) -> v;
+        case Add(Expr l, Expr r) -> eval(l) + eval(r);
+        case Mul(Num(var a), Num(var b)) -> a * b;      // вкладений шаблон
+        case Mul(Expr l, Expr r) -> eval(l) * eval(r);
+        case Neg(Neg(var inner)) -> eval(inner);         // --x == x
+        case Neg(var inner) -> -eval(inner);
+    };
 }
+
+eval(new Add(new Num(2), new Mul(new Num(3), new Num(4))));   // 14
 \`\`\`
 
-### 2. Pattern Matching w instrukcjach switch (Java 21):
-Pozwala na sprawdzenie typu w switchu:
-\`\`\`java
-String result = switch (obj) {
-    case Integer i -> "Liczba całkowita: " + i;
-    case String s  -> "Napis o długości: " + s.length();
-    case null      -> "Wartość null!";
-    default        -> "Inny typ";
-};
-\`\`\`
+Від Java 22 непотрібні компоненти можна пропускати через \`_\`: \`case Add(Num _, var r) -> ...\`.
 
-### 3. Klasy Blokowane (Sealed Classes — Java 17, JEP 409) i wyczerpalność switcha:
-Klasy sealed (\`sealed class\`) ograniczają listę podklas, które mogą po nich dziedziczyć. Słowo kluczowe \`permits\` jawnie wymienia dozwolone podklasy. Jeśli wszystkie podklasy są zdefiniowane w tym samym pliku źródłowym, klauzula \`permits\` może zostać pominięta.
-
-Każda dozwolona podklasa musi być oznaczona jako \`final\`, \`sealed\` lub \`non-sealed\`.
-
-W połączeniu ze switchem, kompilator może sprawdzić wyczerpalność (czy obsłużono wszystkie przypadki), eliminując potrzebę pisania bloku \`default\`:
-\`\`\`java
-public sealed interface Shape permits Circle, Square {}
-public final class Circle implements Shape { public double radius; }
-public final class Square implements Shape { public double side; }
-
-// Wyczerpujący switch (brak default)
-double area = switch (shape) {
-    case Circle c -> Math.PI * c.radius * c.radius;
-    case Square s -> s.side * s.side;
-};
-\`\`\`
+> [!TIP]
+> sealed-інтерфейс + records + switch — це ідіоматичний спосіб моделювати «один з кількох варіантів» (результат операції, команду, AST). Якщо додати новий варіант, компілятор покаже кожен switch, який треба оновити.
 `
     },
     {
-      title: "4. Podstawy Wielowątkowości: Wątki (Threads)",
+      title: "4. Потоки: Thread і Runnable",
       content: `
-Wielowątkowość w Javie pozwala na jednoczesne wykonywanie wielu zadań w ramach tego samego procesu. Każdy program w Javie uruchamia przynajmniej jeden wątek główny (Main Thread).
+Потік (thread) — незалежна послідовність виконання з **власним стеком**, але **спільною купою** з іншими потоками процесу.
 
-Wątek reprezentowany jest przez klasę \`java.lang.Thread\`. Wątki można tworzyć na dwa sposoby:
-
-### 1. Dziedziczenie po klasie Thread:
 \`\`\`java
-public class MyThread extends Thread {
-    @Override
-    public void run() {
-        System.out.println("Wątek uruchomiony: " + Thread.currentThread().getName());
+Runnable task = () -> {
+    for (int i = 0; i < 3; i++) {
+        System.out.println(Thread.currentThread().getName() + ": " + i);
     }
-}
-// Uruchomienie:
-MyThread t = new MyThread();
-t.start(); // Uwaga: wywołujemy start(), a nie run()!
+};
+
+Thread t1 = new Thread(task, "worker-1");
+Thread t2 = new Thread(task, "worker-2");
+t1.start();          // запускає НОВИЙ потік
+t2.start();
+t1.join();           // чекаємо завершення (аналог Thread.Join у C#)
+t2.join();
+System.out.println("готово");
 \`\`\`
 
-### 2. Implementacja interfejsu Runnable (Zalecane):
-Umożliwia oddzielenie definicji zadania od mechanizmu wątku (lepsze praktyki obiektowe).
+Від Java 21 є фабрики: \`Thread.ofPlatform().name("w-", 0).start(task)\` і \`Thread.ofVirtual().start(task)\` (віртуальні потоки — у лекції 09).
+
+> [!CAUTION]
+> \`t.run()\` **не** створює потік, а просто викликає метод у поточному. Новий потік запускає лише \`start()\`. Повторний \`start()\` кидає \`IllegalThreadStateException\`.
+
+### Стани потоку
+
+\`\`\`text
+NEW --start()--> RUNNABLE <--> BLOCKED (чекає на монітор synchronized)
+                    |  ^
+                    v  |
+          WAITING / TIMED_WAITING (join, sleep, wait, park)
+                    |
+                    v
+               TERMINATED
+\`\`\`
+
+### Daemon-потоки
+
+\`t.setDaemon(true)\` до \`start()\`. JVM завершується, коли закінчилися всі **не-daemon** потоки, а daemon-потоки обриваються без попередження. Аналог \`IsBackground = true\` у C#.
+`
+    },
+    {
+      title: "5. Переривання потоку (interrupt)",
+      content: `
+Примусово зупинити потік у Java не можна: \`Thread.stop()\` видалено. Замість цього використовують **кооперативне переривання**: потік отримує прапорець і сам вирішує, як завершитися. Ідея та сама, що в \`CancellationToken\` у C#.
+
 \`\`\`java
-Runnable task = () -> System.out.println("Zadanie w wątku: " + Thread.currentThread().getName());
-Thread t = new Thread(task);
-t.start();
+Thread worker = new Thread(() -> {
+    while (!Thread.currentThread().isInterrupted()) {
+        try {
+            doSomeWork();
+            Thread.sleep(500);                   // блокувальні методи реагують на interrupt
+        } catch (InterruptedException e) {
+            // sleep/wait/join кидають виняток І СКИДАЮТЬ прапорець
+            Thread.currentThread().interrupt();  // відновлюємо прапорець
+            break;
+        }
+    }
+    System.out.println("worker завершився коректно");
+});
+worker.start();
+Thread.sleep(2000);
+worker.interrupt();       // просимо зупинитися
+worker.join();
 \`\`\`
 
-### Różnica między start() a run():
-* **\`start()\`**: Tworzy nowy wątek na poziomie systemu operacyjnego i uruchamia w nim asynchronicznie metodę \`run()\`.
-* **\`run()\`**: Zwykłe wywołanie metody w wątku bieżącym (wykonanie synchroniczne).
+> [!IMPORTANT]
+> Ніколи не «ковтайте» \`InterruptedException\` порожнім \`catch\`. Або прокиньте його далі (\`throws InterruptedException\`), або відновіть прапорець через \`Thread.currentThread().interrupt()\`, інакше код вище по стеку не дізнається про запит на зупинку.
+`
+    },
+    {
+      title: "6. Перша гонка даних і synchronized",
+      content: `
+\`\`\`java
+class Counter {
+    private int value;
+    void increment() { value++; }       // НЕ атомарно: прочитати, додати, записати
+    int get() { return value; }
+}
+
+Counter c = new Counter();
+Runnable r = () -> { for (int i = 0; i < 100_000; i++) c.increment(); };
+Thread a = new Thread(r), b = new Thread(r);
+a.start(); b.start(); a.join(); b.join();
+System.out.println(c.get());            // очікуємо 200000, отримуємо, наприклад, 137412
+\`\`\`
+
+Обидва потоки читають те саме значення, додають 1 і записують. Одне з оновлень губиться. Це **race condition**.
+
+### synchronized
+
+Аналог \`lock (obj) { }\` з C#. Кожен об'єкт у Java має **монітор**: у блоці \`synchronized\` на тому самому об'єкті одночасно може перебувати лише один потік.
+
+\`\`\`java
+class Counter {
+    private int value;
+    synchronized void increment() { value++; }   // монітор this
+    synchronized int get() { return value; }     // читання теж синхронізуємо!
+}
+
+// або блок з приватним об'єктом-замком (краще: ззовні його не захопити)
+private final Object lock = new Object();
+void increment() {
+    synchronized (lock) { value++; }
+}
+\`\`\`
+
+Для простих лічильників є \`AtomicInteger\` (\`incrementAndGet()\`), який працює без блокувань. Детально про синхронізацію та модель пам'яті Java — у лекціях 13–14.
+
+### wait/notify — сигналізація (низький рівень)
+
+\`\`\`java
+synchronized (lock) {
+    while (queue.isEmpty()) lock.wait();     // ЗАВЖДИ в циклі: можливі хибні пробудження
+    item = queue.poll();
+}
+synchronized (lock) {
+    queue.add(x);
+    lock.notifyAll();
+}
+\`\`\`
+
+У реальному коді замість \`wait/notify\` використовуйте \`BlockingQueue\` і класи з \`java.util.concurrent\` (лекція 14).
 `
     }
   ],
   quiz: [
     {
-      question: "W jaki sposób w Javie realizuje się operacje arytmetyczne na precyzyjnych liczbach dziesiętnych klasy BigDecimal?",
+      question: "Що робить виклик thread.run() замість thread.start()?",
       options: [
-        "Używając standardowych operatorów, np. c = a + b;",
-        "Wywołując metody takie jak a.add(b) i a.multiply(b), ponieważ Java nie wspiera przeciążania operatorów.",
-        "Java automatycznie zamienia BigDecimal na typ int.",
-        "Poprzez refleksję i wywołanie ukrytych operatorów."
+        "Запускає новий потік",
+        "Виконує run() синхронно в поточному потоці, нового потоку не створюється",
+        "Кидає виняток",
+        "Запускає потік у фоні"
       ],
       answer: 1,
-      explanation: "Java nie wspiera przeciążania operatorów, dlatego operacje na klasach takich jak BigDecimal muszą być wywoływane za pomocą jawnych metod (add, multiply, divide)."
+      explanation: "Новий потік ОС створює і запускає лише start(). run() — звичайний метод."
     },
     {
-      question: "Co daje zastosowanie Pattern Matching dla operatora instanceof (od Java 16)?",
+      question: "Чому value++ у двох потоках дає менший за очікуваний результат?",
       options: [
-        "Pozwala na szybsze działanie programu na starszych systemach.",
-        "Automatycznie rzutuje sprawdzany obiekt na deklarowaną zmienną typu, eliminując konieczność pisania dodatkowej linijki kodu z rzutowaniem.",
-        "Uniemożliwia rzutowanie obiektów na typy niekompatybilne.",
-        "Zamienia instancje na typy prymitywne."
+        "Через збирач сміття",
+        "++ складається з трьох кроків (читання, додавання, запис), і потоки перезаписують оновлення одне одного",
+        "int не може зберігати великі числа",
+        "Потоки виконуються послідовно"
       ],
       answer: 1,
-      explanation: "Zapis 'if (obj instanceof String s)' sprawdza typ obj, a jeśli warunek jest spełniony, automatycznie tworzy zmienną referencyjną 's' typu String, gotową do użycia."
+      explanation: "Це класична гонка даних. Захищайте операцію через synchronized або використовуйте AtomicInteger."
     },
     {
-      question: "Co się stanie, gdy zamiast metody start() wywołamy bezpośrednio metodę run() na obiekcie Thread?",
+      question: "Як правильно обробити InterruptedException, якщо метод не може оголосити throws?",
       options: [
-        "Wątek zostanie uruchomiony w tle, ale bez nazwy.",
-        "Kod z metody run() wykona się synchronicznie w bieżącym wątku (nie zostanie utworzony nowy wątek systemowy).",
-        "Zostanie rzucony wyjątek IllegalThreadStateException.",
-        "Maszyna JVM zakończy działanie programu."
+        "Порожній catch",
+        "Відновити прапорець: Thread.currentThread().interrupt() і завершити роботу",
+        "Викликати Thread.stop()",
+        "Перезапустити потік"
       ],
       answer: 1,
-      explanation: "Tylko metoda start() żąda od systemu operacyjnego utworzenia nowego wątku. Bezpośrednie wywołanie run() działa jak zwykłe wywołanie metody na obiekcie w bieżącym wątku."
+      explanation: "Блокувальні методи скидають прапорець, коли кидають виняток. Його треба відновити, щоб код вище по стеку дізнався про запит на переривання."
+    },
+    {
+      question: "Що виведе switch з case Integer i when i > 0 -> \"A\"; case Integer i -> \"B\"; для значення -5?",
+      options: ["A", "B", "Помилка компіляції", "MatchException"],
+      answer: 1,
+      explanation: "Гілки перевіряються по черзі. Guard-умова першої гілки хибна, тож спрацьовує друга."
+    },
+    {
+      question: "Чим у Java замінюють #if DEBUG?",
+      options: [
+        "Директивою #ifdef",
+        "Константою static final boolean і звичайним if: компілятор викидає мертвий код",
+        "Анотацією @Debug",
+        "Ніяк"
+      ],
+      answer: 1,
+      explanation: "Препроцесора в Java немає. Для «умовної компіляції» використовують константи часу компіляції, профілі збирання або рівні логування."
+    },
+    {
+      question: "Що дає поєднання sealed interface + records + switch?",
+      options: [
+        "Швидшу роботу GC",
+        "Перевірку вичерпності: компілятор вимагає обробити всі підтипи, і default стає непотрібним",
+        "Можливість змінювати поля records",
+        "Множинне наслідування класів"
+      ],
+      answer: 1,
+      explanation: "Компілятор знає повний список дозволених підтипів sealed-типу, тому може перевірити, що switch охоплює всі варіанти."
     }
   ]
 };

@@ -1,187 +1,382 @@
 export const lecture18 = {
   id: "18",
-  title: "Wykład 18: Relacyjne Bazy Danych i Podstawy SQL w Javie (JDBC)",
-  description: "Zrozumienie działania relacyjnych baz danych, wprowadzenie do podstawowych instrukcji języka SQL oraz omówienie sposobu łączenia się z bazą danych z poziomu kodu Javy poprzez JDBC.",
+  title: "Лекція 18: Реляційні бази даних, SQL і JDBC",
+  description: "Як влаштовані реляційні бази даних, основи SQL (DDL, CRUD, JOIN, агрегація), підключення до бази з Java через JDBC: PreparedStatement і захист від SQL-ін'єкцій, транзакції, пакетні операції, пул з'єднань, патерн Repository і огляд ORM (JPA/Hibernate).",
   sections: [
     {
-      title: "1. Relacyjne Bazy Danych (RDBMS)",
+      title: "1. Реляційні бази даних",
       content: `
-Gdy dane w aplikacji, takiej jak sklep internetowy czy portal społecznościowy, muszą przetrwać pomiędzy uruchomieniami programu, używamy tzw. trwałości danych (Persistance). Do tego celu powszechnie stosuje się **Relacyjne Bazy Danych**. Przykłady to **PostgreSQL**, **MySQL**, **Oracle** czy wbudowana baza **H2**.
+Коли дані мають пережити перезапуск програми, їх зберігають у базі даних. Найпоширеніші — **реляційні СУБД**: PostgreSQL, MySQL, Oracle, SQL Server, а також вбудована H2 (зручна для тестів).
 
-### Koncepcje relacyjne:
-1. **Tabela (Table):** Przypomina arkusz kalkulacyjny w Excelu. Służy do przechowywania określonego typu danych, np. \`Users\` lub \`Orders\`.
-2. **Rekord/Wiersz (Row):** Pojedynczy "obiekt" z danymi, czyli np. jeden konkretny użytkownik. Odpowiada jednemu instancji klasy w Javie.
-3. **Kolumna (Column):** Atrybut danych o określonym typie, np. \`first_name\` (typu tekstowego), \`age\` (typu całkowitego). Odpowiada polu w klasie Javy.
-4. **Klucz główny (Primary Key - PK):** Unikalny identyfikator każdego rekordu. Żadne dwa rekordy nie mogą mieć tego samego PK. Najczęściej jest to rosnący numer (ID) typu \`BIGINT\` (w Javie jako \`Long\`).
-5. **Klucz obcy (Foreign Key - FK):** Wskazuje na Klucz Główny w innej tabeli, tworząc w ten sposób *relację* pomiędzy tabelami. Np. wiersz w tabeli \`Orders\` posiada pole \`user_id\`, które prowadzi nas do informacji o właścicielu w tabeli \`Users\`.
+| Поняття | Що це | Відповідник у Java |
+| --- | --- | --- |
+| **Таблиця** | набір записів одного типу (\`users\`, \`orders\`) | клас |
+| **Рядок (запис)** | один об'єкт з даними | екземпляр класу |
+| **Стовпець** | атрибут певного типу | поле |
+| **Первинний ключ (PK)** | унікальний ідентифікатор рядка | \`id\` |
+| **Зовнішній ключ (FK)** | посилання на PK іншої таблиці | посилання на інший об'єкт |
+| **Індекс** | структура для швидкого пошуку (B-дерево) | щось на кшталт \`TreeMap\` |
+
+### Створення схеми (DDL)
+
+\`\`\`sql
+CREATE TABLE users (
+    id         BIGSERIAL PRIMARY KEY,           -- автоінкремент (PostgreSQL)
+    email      VARCHAR(255) NOT NULL UNIQUE,
+    first_name VARCHAR(100) NOT NULL,
+    age        INT CHECK (age >= 0),
+    created_at TIMESTAMP NOT NULL DEFAULT now()
+);
+
+CREATE TABLE orders (
+    id       BIGSERIAL PRIMARY KEY,
+    user_id  BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    total    NUMERIC(10, 2) NOT NULL,
+    status   VARCHAR(20) NOT NULL
+);
+
+CREATE INDEX idx_orders_user ON orders(user_id);
+\`\`\`
+
+> [!TIP]
+> Гроші зберігайте в \`NUMERIC/DECIMAL\` і читайте в \`BigDecimal\`. Тип \`FLOAT\` для грошей не підходить.
 `
     },
     {
-      title: "2. Język SQL (Structured Query Language)",
+      title: "2. SQL: CRUD, JOIN, агрегація",
       content: `
-Bazy relacyjne nie rozumieją Javy. By z nimi "porozmawiać", wykorzystujemy uniwersalny język **SQL**.
+### Читання — SELECT
 
-Dzieli się on na podgrupy, a najczęstszą z nich jest **DML (Data Manipulation Language)**. Jego fundamentami jest tak zwany **CRUD** (Create, Read, Update, Delete):
-
-### 1. Pobieranie danych (Read - SELECT)
-Służy do wyszukiwania danych.
 \`\`\`sql
--- Wyciągnij wszystkich użytkowników z tabeli users
 SELECT * FROM users;
-
--- Zwróć tylko adresy email dla użytkowników, którzy mają więcej niż 18 lat
-SELECT email FROM users WHERE age > 18;
+SELECT email, first_name FROM users WHERE age > 18 ORDER BY first_name LIMIT 10;
+SELECT * FROM users WHERE email LIKE '%@pw.edu.pl' AND age BETWEEN 18 AND 26;
 \`\`\`
 
-### 2. Tworzenie danych (Create - INSERT)
-Służy do wstawiania nowych rekordów.
+### Створення — INSERT
+
 \`\`\`sql
--- ID często jest generowane autoamtycznie, więc pomijamy je na wejściu.
-INSERT INTO users (first_name, last_name, age, email) 
-VALUES ('Jan', 'Kowalski', 25, 'jan@example.com');
+INSERT INTO users (email, first_name, age) VALUES ('jan@example.com', 'Jan', 25);
 \`\`\`
 
-### 3. Aktualizacja danych (Update - UPDATE)
-> [!WARNING]
-> Zawsze stosuj klauzulę \`WHERE\` przy operacji \`UPDATE\` lub \`DELETE\`. W przeciwnym razie modyfikacji ulegną WSZYSTKIE rekordy w tabeli!
+### Зміна і видалення — UPDATE і DELETE
 
 \`\`\`sql
--- Zmień adres email tylko użytkownikowi o ID = 42
-UPDATE users 
-SET email = 'new_email@example.com' 
-WHERE id = 42;
-\`\`\`
-
-### 4. Usuwanie danych (Delete - DELETE)
-\`\`\`sql
--- Usunięcie rekordu. Uważaj na brak klauzuli WHERE!
+UPDATE users SET email = 'new@example.com' WHERE id = 42;
 DELETE FROM users WHERE id = 42;
 \`\`\`
 
-### Pobieranie z relacji (JOIN)
-Pozwala "skleić" w zapytaniu dane z kilku powiązanych ze sobą tabel (używając klucza głównego i klucza obcego).
+> [!CAUTION]
+> \`UPDATE\` чи \`DELETE\` **без WHERE** змінить або видалить **усі** рядки таблиці.
+
+### JOIN — дані з кількох таблиць
+
 \`\`\`sql
--- Znajdź wszystkie zamówienia oraz imiona osób, które je złożyły
-SELECT orders.order_number, users.first_name 
-FROM orders
-JOIN users ON orders.user_id = users.id;
+-- INNER JOIN: лише користувачі, які мають замовлення
+SELECT u.first_name, o.id, o.total
+FROM orders o
+JOIN users u ON o.user_id = u.id;
+
+-- LEFT JOIN: усі користувачі, замовлення — якщо є (інакше NULL)
+SELECT u.first_name, o.id
+FROM users u
+LEFT JOIN orders o ON o.user_id = u.id;
 \`\`\`
+
+### Агрегація — GROUP BY
+
+\`\`\`sql
+SELECT u.first_name, COUNT(o.id) AS orders_count, SUM(o.total) AS spent
+FROM users u
+LEFT JOIN orders o ON o.user_id = u.id
+GROUP BY u.id, u.first_name
+HAVING SUM(o.total) > 100          -- фільтр ПІСЛЯ групування
+ORDER BY spent DESC;
+\`\`\`
+
+Порівняння з лекцією 05: \`GROUP BY\` ↔ \`Collectors.groupingBy\`, \`WHERE\` ↔ \`filter\`, \`HAVING\` ↔ \`filter\` після групування, \`JOIN\` ↔ \`Map\` + \`flatMap\`.
 `
     },
     {
-      title: "3. Łączenie Javy z Bazą (JDBC)",
+      title: "3. JDBC: з'єднання і запити",
       content: `
-Aplikacja z zasady nie używa okienka tekstowego SQL. Jak z poziomu kodu Javy wstawiać obiekty do tabel? Służy do tego warstwa **JDBC (Java Database Connectivity)** wbudowana w bibliotekę Javy (w pakiecie \`java.sql\`).
+**JDBC** (Java Database Connectivity, пакет \`java.sql\`) — стандартний низькорівневий API доступу до баз даних. Аналог ADO.NET (\`DbConnection\`, \`DbCommand\`, \`DbDataReader\`).
 
-Kroki w klasycznym podejściu (tzw. "Czysty JDBC"):
-
-### Krok 1: Dodanie sterownika bazy danych
-Ponieważ do każdej bazy mówi się nieco innym "dialektem", potrzebujesz tłumacza (tzw. Drivera). Dodaje się go z pliku JAR lub z Mavena:
 \`\`\`xml
 <dependency>
     <groupId>org.postgresql</groupId>
     <artifactId>postgresql</artifactId>
-    <version>42.7.2</version>
+    <version>42.7.4</version>
+</dependency>
+<!-- для тестів: in-memory база -->
+<dependency>
+    <groupId>com.h2database</groupId>
+    <artifactId>h2</artifactId>
+    <version>2.3.232</version>
 </dependency>
 \`\`\`
 
-### Krok 2: Kod komunikacyjny:
 \`\`\`java
-import java.sql.*;
+String url = "jdbc:postgresql://localhost:5432/shop";   // H2: "jdbc:h2:mem:test;DB_CLOSE_DELAY=-1"
 
-public class JdbcExample {
-    public static void main(String[] args) {
-        String url = "jdbc:postgresql://localhost:5432/my_database";
-        String user = "db_user";
-        String pass = "db_password";
+try (Connection conn = DriverManager.getConnection(url, "shop", System.getenv("DB_PASSWORD"));
+     PreparedStatement ps = conn.prepareStatement(
+             "SELECT id, email, first_name, age FROM users WHERE age > ? ORDER BY id")) {
 
-        // Używamy try-with-resources dla połączeń sieciowych do bezpiecznego ich zamknięcia!
-        try (Connection conn = DriverManager.getConnection(url, user, pass);
-             PreparedStatement statement = conn.prepareStatement("SELECT * FROM users WHERE age > ?")) {
+    ps.setInt(1, 18);                                   // параметри нумеруються з 1!
 
-             // Zabezpieczenie przed atakiem SQL Injection: podmieniamy znak zapytania
-             statement.setInt(1, 18);
-
-             try (ResultSet rs = statement.executeQuery()) {
-                 while (rs.next()) {
-                     System.out.println("Znalazłem Usera: " + rs.getString("first_name"));
-                 }
-             }
-        } catch (SQLException e) {
-             e.printStackTrace();
+    try (ResultSet rs = ps.executeQuery()) {
+        while (rs.next()) {                             // курсор на наступний рядок
+            long id = rs.getLong("id");
+            String email = rs.getString("email");
+            int age = rs.getInt("age");
+            boolean ageWasNull = rs.wasNull();          // getInt повертає 0 для NULL!
+            System.out.println(id + " " + email);
         }
     }
 }
 \`\`\`
 
-> [!NOTE]
-> Zauważ, że w czystym podejściu JDBC, zaledwie dla jednego zapytania musimy utworzyć Connection, Prepared Statement, bindować parametry, wykonać query, stworzyć ResultSet oraz zamknąć wszystkie powiązane z nimi zmienne na końcu. A wszystko to owinąć w try-catch. Jest to tzw. "Boilerplate code" (kod szablonowy). 
+| Метод | Для чого | Повертає |
+| --- | --- | --- |
+| \`executeQuery()\` | SELECT | \`ResultSet\` |
+| \`executeUpdate()\` | INSERT, UPDATE, DELETE, DDL | кількість змінених рядків |
+| \`execute()\` | будь-що | \`true\`, якщо є ResultSet |
+
+> [!IMPORTANT]
+> \`Connection\`, \`Statement\` і \`ResultSet\` — це ресурси (мережеве з'єднання, курсор у БД). **Завжди** закривайте їх через try-with-resources.
+
+### Отримання згенерованого id
+
+\`\`\`java
+try (PreparedStatement ps = conn.prepareStatement(
+        "INSERT INTO users (email, first_name, age) VALUES (?, ?, ?)",
+        Statement.RETURN_GENERATED_KEYS)) {
+    ps.setString(1, user.email());
+    ps.setString(2, user.firstName());
+    ps.setInt(3, user.age());
+    ps.executeUpdate();
+    try (ResultSet keys = ps.getGeneratedKeys()) {
+        keys.next();
+        long newId = keys.getLong(1);
+    }
+}
+\`\`\`
 `
     },
     {
-      title: "4. ORM (Object-Relational Mapping)",
+      title: "4. SQL-ін'єкції",
       content: `
-Ze względu na obszerność boilerplate kodu w natywnym JDBC, świat Javy rzadko używa go bezpośrednio do pisania aplikacji korporacyjnych. O wiele popularniejszym podejściem są narzędzia, które załatwiają za nas "czarną robotę". Są to narzędzia **ORM (Object-Relational Mapping)**. 
+\`\`\`java
+// ❌ НІКОЛИ ТАК НЕ РОБІТЬ
+String sql = "SELECT * FROM users WHERE email = '" + email + "'";
+stmt.executeQuery(sql);
+\`\`\`
 
-Standardem Javy w tej kategorii jest **JPA (Java Persistence API)**, a wiodącą biblioteką implementującą jest **Hibernate**.
+Якщо користувач введе \`' OR '1'='1\`, запит перетвориться на
 
-Narzędzia typu Hibernate pozwalają w ogóle przestać pisać bazowy SQL! Wystarczy zadeklarować klasę używając adnotacji. Framework sam stworzy w tle kod JDBC oraz zapytania SQL po to, by tę klasę automatycznie zsynchronizować z relacyjną tabelą.
+\`\`\`sql
+SELECT * FROM users WHERE email = '' OR '1'='1'      -- поверне ВСІХ користувачів
+\`\`\`
 
-Przykładowy zarys tego, co cię czeka w świecie Hibernate i Spring Data (kolejny szczebel zaawansowania dla Spring Boota):
+А \`'; DROP TABLE users; --\` видалить таблицю.
+
+### Захист — PreparedStatement
 
 \`\`\`java
-@Entity // Mówi bibliotece, że ta klasa to reprezentacja Tabeli SQL
-@Table(name = "users")
-public class User {
+PreparedStatement ps = conn.prepareStatement("SELECT * FROM users WHERE email = ?");
+ps.setString(1, email);       // значення передається ОКРЕМО від тексту запиту
+\`\`\`
 
-    @Id // Klucz główny
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+База отримує шаблон запиту і значення **окремо**, тож значення ніколи не стане частиною SQL-коду.
+
+> [!WARNING]
+> Параметри \`?\` працюють лише для **значень**. Назви таблиць, стовпців чи напрямок \`ORDER BY\` підставити через \`?\` не можна. Якщо вони залежать від введення, перевіряйте їх за білим списком (наприклад, \`enum SortColumn\`).
+`
+    },
+    {
+      title: "5. Транзакції, пакетні операції, пул з'єднань",
+      content: `
+### Транзакції (ACID)
+
+За замовчуванням JDBC працює в режимі **autocommit**: кожен запит — окрема транзакція. Щоб кілька операцій виконалися **або всі, або жодна**:
+
+\`\`\`java
+public void transfer(long fromId, long toId, BigDecimal amount) throws SQLException {
+    try (Connection conn = dataSource.getConnection()) {
+        conn.setAutoCommit(false);
+        try (var debit = conn.prepareStatement("UPDATE accounts SET balance = balance - ? WHERE id = ? AND balance >= ?");
+             var credit = conn.prepareStatement("UPDATE accounts SET balance = balance + ? WHERE id = ?")) {
+
+            debit.setBigDecimal(1, amount); debit.setLong(2, fromId); debit.setBigDecimal(3, amount);
+            if (debit.executeUpdate() != 1) throw new InsufficientFundsException(amount);
+
+            credit.setBigDecimal(1, amount); credit.setLong(2, toId);
+            credit.executeUpdate();
+
+            conn.commit();                   // зафіксувати обидві зміни
+        } catch (Exception e) {
+            conn.rollback();                 // скасувати все
+            throw e;
+        }
+    }
+}
+\`\`\`
+
+**ACID**: Atomicity (атомарність), Consistency (узгодженість), Isolation (ізоляція), Durability (довговічність).
+
+### Пакетні операції
+
+\`\`\`java
+try (var ps = conn.prepareStatement("INSERT INTO logs (level, message) VALUES (?, ?)")) {
+    for (LogEntry e : entries) {
+        ps.setString(1, e.level());
+        ps.setString(2, e.message());
+        ps.addBatch();
+    }
+    ps.executeBatch();          // один мережевий обмін замість тисяч
+}
+\`\`\`
+
+### Пул з'єднань
+
+Відкрити з'єднання з БД дорого: TCP, автентифікація, десятки мілісекунд. **Пул** тримає готові з'єднання, а \`close()\` повертає з'єднання в пул, а не закриває його. Стандарт — **HikariCP**:
+
+\`\`\`java
+HikariConfig cfg = new HikariConfig();
+cfg.setJdbcUrl("jdbc:postgresql://localhost:5432/shop");
+cfg.setUsername("shop");
+cfg.setPassword(System.getenv("DB_PASSWORD"));
+cfg.setMaximumPoolSize(10);
+DataSource dataSource = new HikariDataSource(cfg);   // DataSource замість DriverManager
+\`\`\`
+
+> [!CAUTION]
+> Ніколи не зберігайте паролі в коді чи репозиторії. Беріть їх зі змінних середовища або з менеджера секретів.
+`
+    },
+    {
+      title: "6. Патерн Repository і огляд ORM",
+      content: `
+Код JDBC варто ізолювати в класах-**репозиторіях**, щоб бізнес-логіка не знала про SQL:
+
+\`\`\`java
+public record User(Long id, String email, String firstName, int age) { }
+
+public interface UserRepository {
+    Optional<User> findById(long id);
+    List<User> findAdults();
+    User save(User user);
+}
+
+public class JdbcUserRepository implements UserRepository {
+    private final DataSource ds;
+    public JdbcUserRepository(DataSource ds) { this.ds = ds; }
+
+    @Override
+    public Optional<User> findById(long id) {
+        String sql = "SELECT id, email, first_name, age FROM users WHERE id = ?";
+        try (var conn = ds.getConnection(); var ps = conn.prepareStatement(sql)) {
+            ps.setLong(1, id);
+            try (var rs = ps.executeQuery()) {
+                return rs.next() ? Optional.of(map(rs)) : Optional.empty();
+            }
+        } catch (SQLException e) {
+            throw new DataAccessException("findById " + id, e);   // власний unchecked
+        }
+    }
+
+    private static User map(ResultSet rs) throws SQLException {
+        return new User(rs.getLong("id"), rs.getString("email"),
+                        rs.getString("first_name"), rs.getInt("age"));
+    }
+    // ...
+}
+\`\`\`
+
+Тепер \`UserService\` залежить від інтерфейсу \`UserRepository\`, а в модульних тестах його легко підмінити fake-реалізацією на \`HashMap\` або mock-об'єктом (лекція 19).
+
+### ORM: JPA / Hibernate
+
+Чистий JDBC багатослівний. **ORM** (Object-Relational Mapping) генерує SQL сам. Стандарт — **JPA**, найпопулярніша реалізація — **Hibernate**. Аналог у .NET — Entity Framework.
+
+\`\`\`java
+@Entity
+@Table(name = "users")
+public class UserEntity {
+    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     @Column(name = "first_name", nullable = false)
     private String firstName;
 
-    // Magia polega na tym, że zamiast pisać "SELECT * FROM users WHERE age > 18"
-    // Spring zbuduje nam obiekt i da gotową, dającą się wywołać bezpośrednio z kodu listę!
+    @OneToMany(mappedBy = "user")
+    private List<OrderEntity> orders;
+}
+
+// Spring Data JPA: реалізацію згенерує фреймворк з назви методу
+public interface UserJpaRepository extends JpaRepository<UserEntity, Long> {
+    List<UserEntity> findByAgeGreaterThan(int age);
 }
 \`\`\`
-Mimo iż z reguły bazuje się dzisiaj na Hibernate i narzędziach ORM, **zrozumienie bazowych konstrukcji SQL (Join, Select, Indexy)** jest jedną z najcenniejszych wartości na rynku pracy. Działanie narzędzia Hibernate bez problemu zrozumiesz, mając za sobą doświadczenie z Adnotacjami i Reflection API omawianymi we wcześniejszych modułach tego kursu!
+
+Легковаговий проміжний варіант між чистим JDBC і ORM — бібліотеки **jOOQ** (типобезпечний SQL) і **JDBI**.
+
+> [!WARNING]
+> ORM не звільняє від знання SQL. Класична пастка — **N+1 запитів**: один запит повертає 100 користувачів, а потім ще 100 запитів тягнуть замовлення кожного. Без розуміння JOIN та індексів цього не помітити.
 `
     }
   ],
   quiz: [
     {
-      question: "W jakim celu stosuje się klauzulę WHERE przy instrukcjach typu UPDATE lub DELETE?",
+      question: "Як захиститися від SQL-ін'єкцій у JDBC?",
       options: [
-        "Służy wyłącznie celom logowania – bez WHERE zapytanie wcale się nie uruchomi.",
-        "Dzięki niej zoptymalizujemy zapis pod względem zużytej pamięci serwera.",
-        "Chroni to nas przed omyłkowym zaaplikowaniem tej operacji dla WSZYSTKICH wierszy występujących w tej konkretnej tabeli.",
-        "Powyższe stwierdzenie o WHERE w UPDATE/DELETE nie jest prawdziwe — klauzuli WHERE używa się wyłącznie z instrukcją SELECT."
-      ],
-      answer: 2,
-      explanation: "Działanie `UPDATE` oraz `DELETE` bez nałożonego uprzednio filtru modyfikuje globalnie od góry do dołu całą tabelę, prowadząc najczęściej do krytycznych błędów biznesowych i incydentów produkcji."
-    },
-    {
-      question: "Czym jest 'Foreign Key' w relacyjnej bazie danych?",
-      options: [
-        "Bezpiecznym kluczem autoryzacyjnym, wysyłanym z Frontendu",
-        "Wartością powiązującą pole w danej tabeli do Klucza Głównego innej tabeli (służącą nawiązaniu i weryfikacji relacji)",
-        "Wyłącznie inną nazwą na klucz UUID generowany z systemu operacyjnego",
-        "Dodatkową kopią zapasową hasła do tej konkretnej bazy z autoryzacji"
+        "Екранувати лапки вручну",
+        "Використовувати PreparedStatement з параметрами ?, а значення передавати через setXxx()",
+        "Використовувати Statement замість PreparedStatement",
+        "Писати SQL великими літерами"
       ],
       answer: 1,
-      explanation: "Foreign Key (Klucz obcy) to podstawa łączenia tabel – np. przechowując w tabeli 'Samochod' informację na temat tego, do kogo on należy (z wykorzystaniem pola 'id_wlasciciela' pochodzącego z tabeli 'Klient')."
+      explanation: "Шаблон запиту і значення передаються в базу окремо, тому значення ніколи не виконується як SQL."
     },
     {
-      question: "Dlaczego technologia ORM (jak Hibernate) stała się preferowaną opcją względem natywnego (czystego) użycia JDBC w środowisku Javy?",
+      question: "Що поверне rs.getInt(\"age\"), якщо в базі там NULL?",
+      options: ["null", "0, а rs.wasNull() поверне true", "Виняток", "-1"],
+      answer: 1,
+      explanation: "Примітивний int не може бути null. Перевірте rs.wasNull() або читайте значення як rs.getObject(\"age\", Integer.class)."
+    },
+    {
+      question: "Навіщо conn.setAutoCommit(false) під час переказу грошей?",
       options: [
-        "Ponieważ Hibernate wykonuje zapytania kilkadziesiąt razy szybciej niż standardowe JDBC pod spodem.",
-        "Jako jedyna potrafi zamknąć za dewelopera gniazda Socket do wybranego klastra bazodanowego.",
-        "Automatycznie zwalnia zasoby deweloperów z pisania trywialnego, szablonowego (boilerplate) kodu i konwertowania obiektów SQL -> Java ręcznie z każdej z poszczególnych kolumn ResultSet.",
-        "Ponieważ natywny JDBC został porzucony od wersji Java 8 i ma w sobie wiele luk zabezpieczeń."
+        "Для швидкодії",
+        "Щоб списання і зарахування виконалися атомарно: або обидва (commit), або жодне (rollback)",
+        "Щоб уникнути SQL-ін'єкцій",
+        "Щоб не закривати з'єднання"
       ],
-      answer: 2,
-      explanation: "ORM odciąża deweloperów z rutynowego pisania logiki typu pobieranie parametru rs.getString(\"age\"), bindowanie PreparedStatement itd. Pamiętaj jednak, że z technicznego punktu widzenia ORM w tle wykonuje mimo wszystko zapytania poprzez wbudowane pod spodem JDBC, więc natywne połączenie bywa szybsze!"
+      answer: 1,
+      explanation: "В autocommit кожен UPDATE — окрема транзакція. Збій між ними залишив би гроші списаними, але не зарахованими."
+    },
+    {
+      question: "Чим відрізняються INNER JOIN і LEFT JOIN?",
+      options: [
+        "Нічим",
+        "INNER повертає лише рядки з відповідністю в обох таблицях; LEFT — усі рядки лівої таблиці, а відсутні дані правої заповнює NULL",
+        "LEFT JOIN швидший",
+        "INNER JOIN не потребує умови ON"
+      ],
+      answer: 1,
+      explanation: "LEFT JOIN потрібен, наприклад, щоб показати й користувачів без замовлень."
+    },
+    {
+      question: "Що робить пул з'єднань (HikariCP)?",
+      options: [
+        "Кешує результати запитів",
+        "Тримає набір відкритих з'єднань і видає їх повторно; close() повертає з'єднання в пул",
+        "Шифрує з'єднання",
+        "Генерує SQL"
+      ],
+      answer: 1,
+      explanation: "Відкривати з'єднання з базою дорого, тож пул перевикористовує готові з'єднання."
     }
   ]
 };

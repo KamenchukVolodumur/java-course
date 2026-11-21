@@ -1,0 +1,62 @@
+{
+  "messages": {
+    "missing": {
+      "ua": "Відсутні змінні: ",
+      "en": "Missing variables: "
+    },
+    "invalid": {
+      "ua": "Некоректні числа: ",
+      "en": "Invalid numbers: "
+    }
+  },
+  "readme": {
+    "title": {
+      "ua": "Лабораторна 12: Production-ready бекенд",
+      "en": "Lab 12: A Production-Ready Backend"
+    },
+    "intro": {
+      "ua": "Ця лабораторна продовжує **ваш** код лабораторної 10, тому тут лише нове: `pom.xml` з усіма залежностями, заготовка `AppConfig` з тестами і приклад `.env`.",
+      "en": "This lab continues **your** code from lab 10, so only the new parts are here: `pom.xml` with all the dependencies, an `AppConfig` stub with tests and a sample `.env`."
+    },
+    "files": [
+      {
+        "names": [
+          "pom.xml"
+        ],
+        "status": {
+          "ua": "надано: замінює `pom.xml` лабораторної 10 (PostgreSQL, HikariCP, Jackson, Testcontainers, fat-JAR `target/app.jar`)",
+          "en": "given: replaces the lab 10 `pom.xml` (PostgreSQL, HikariCP, Jackson, Testcontainers, a fat JAR `target/app.jar`)"
+        }
+      },
+      {
+        "names": [
+          ".env.example"
+        ],
+        "status": {
+          "ua": "скопіюйте в `.env` і заповніть; `.env` не комітьте",
+          "en": "copy to `.env` and fill in; do not commit `.env`"
+        }
+      },
+      {
+        "names": [
+          "config/AppConfig"
+        ],
+        "status": "yours"
+      },
+      {
+        "names": [
+          "config/AppConfigTest"
+        ],
+        "status": "tests"
+      }
+    ],
+    "stages": [
+      "stage1"
+    ],
+    "notes": {
+      "ua": "## Як почати\n\n1. Скопіюйте `src/` вашої лабораторної 10 у цю папку (файли звідси не перезаписуйте).\n2. У `pom.xml` властивість `main.class` має вказувати на ваш клас із `main` (за замовчуванням `pl.mini.bank.App`).\n3. `./mvnw test` має бути зеленим, крім `AppConfigTest`, поки ви не реалізуєте етап 1.\n\nТести етапів 2–5 (HTTP API, MDC, Testcontainers, Docker) ви пишете самі, як вимагає завдання. Для `*IT` з Testcontainers потрібен запущений Docker: `./mvnw verify`.",
+      "en": "## Getting started\n\n1. Copy `src/` of your lab 10 into this folder (do not overwrite the files from here).\n2. In `pom.xml` the `main.class` property must point to your class with `main` (`pl.mini.bank.App` by default).\n3. `./mvnw test` must be green, except `AppConfigTest` until you implement stage 1.\n\nYou write the tests of stages 2–5 (HTTP API, MDC, Testcontainers, Docker) yourself, as the task requires. The `*IT` tests with Testcontainers need a running Docker: `./mvnw verify`."
+    },
+    "jdk": 21
+  }
+}

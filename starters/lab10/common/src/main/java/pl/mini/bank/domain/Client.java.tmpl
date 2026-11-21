@@ -1,0 +1,11 @@
+package pl.mini.bank.domain;
+
+import java.math.BigDecimal;
+
+public record Client(Long id, String pesel, String fullName, BigDecimal balance) {
+    public Client {               // a compact constructor: invariants
+        if (!Pesel.isValid(pesel)) throw new IllegalArgumentException("{{invalidPesel}}");
+        if (fullName == null || fullName.isBlank()) throw new IllegalArgumentException("{{emptyName}}");
+        if (balance == null || balance.signum() < 0) throw new IllegalArgumentException("{{negBalance}}");
+    }
+}

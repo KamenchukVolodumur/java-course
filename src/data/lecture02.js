@@ -1,438 +1,605 @@
 export const lecture02 = {
   id: "02",
-  title: "Wykład 02: Fundamenty Javy, Pamięć JVM i Obiektowość (Poziom Strong Junior)",
-  description: "Kompleksowy przewodnik od podstawowych typów i instrukcji sterujących, przez zarządzanie pamięcią (Stos vs Sterta, String Pool), po zaawansowane koncepcje programowania obiektowego i wewnętrzne mechanizmy JVM.",
+  title: "Лекція 02: Основи мови, пам'ять JVM і класи",
+  description: "Стек і купа, передавання параметрів, рядки та String Pool, масиви, керувальні інструкції та switch-вирази, контракт Object (equals/hashCode/toString), класи, наслідування, поліморфізм, абстрактні класи, інтерфейси й records.",
   sections: [
     {
-      title: "1. Typy Danych i Architektura Pamięci (Stack vs Heap)",
+      title: "1. Стек і купа. Передавання параметрів",
       content: `
-Zrozumienie, jak Java zarządza pamięcią, to granica między początkującym a "Strong Juniorem". JVM dzieli pamięć na dwa główne obszary operacyjne:
+JVM використовує дві основні області пам'яті для даних програми:
 
-1. **Stack (Stos Pamięci):**
-   * Bardzo szybka pamięć przydzielana dla każdego wątku.
-   * Działa w oparciu o tzw. *Stack Frames* (ramki stosu). Każde wywołanie metody tworzy nową ramkę, która jest niszczona, gdy metoda się kończy.
-   * Przechowuje **typy proste** (\`int\`, \`double\`, \`boolean\`) zmiennych lokalnych oraz **Referencje** (adresy) do obiektów.
+1. **Stack (стек)** — окремий для кожного потоку. Кожен виклик методу створює **кадр стеку** (stack frame) з локальними змінними і параметрами, а після повернення з методу кадр зникає. Тут лежать значення примітивів і **посилання** на об'єкти.
+2. **Heap (купа)** — спільна для всіх потоків. Тут живуть **усі об'єкти й масиви**, створені через \`new\`. Купою керує збирач сміття.
 
-2. **Heap (Sterta):**
-   * Duży obszar pamięci współdzielony przez wszystkie wątki.
-   * To tutaj fizycznie alokowane są **wszystkie obiekty** (tworzone słowem kluczowym \`new\`) oraz tablice.
-   * Zarządzany przez *Garbage Collector*, który automatycznie usuwa obiekty, do których nie prowadzi już żadna referencja ze stosu.
+### Java завжди передає параметри за значенням
 
-### Pass-by-Value (Przekazywanie przez wartość)
-Częste pytanie rekrutacyjne: *Czy Java przekazuje parametry przez wartość, czy przez referencję?* 
-Odpowiedź brzmi: **Zawsze przez wartość**. 
+Це класичне питання на співбесіді. Правильна відповідь: **завжди за значенням**. Для об'єктів таким значенням є **посилання**, тож у метод потрапляє копія адреси.
 
-Jednakże, wartością dla obiektów jest ich **adres w pamięci (referencja)**. Kiedy przekazujesz obiekt do metody, kopiujesz jego adres.
-* ✅ Możesz zmienić **stan** obiektu na stercie, używając skopiowanego adresu.
-* ❌ Nie możesz zmienić **referencji** przypisanej do oryginalnej zmiennej.
+* ✅ Через скопійоване посилання можна **змінити стан** об'єкта в купі.
+* ❌ Присвоєння параметру нового об'єкта **не змінює** змінну того, хто викликав метод.
 
 \`\`\`java
 public class MemoryExample {
     public static void main(String[] args) {
-        int primitiveAge = 25;
-        List<String> objectList = new ArrayList<>();
-        objectList.add("Junior");
+        int age = 25;
+        List<String> list = new ArrayList<>();
+        list.add("Junior");
 
-        modifyData(primitiveAge, objectList);
+        modify(age, list);
 
-        // primitiveAge nadal wynosi 25! (Zmieniliśmy tylko kopię na Stosie)
-        System.out.println("Wiek: " + primitiveAge); 
-        
-        // objectList to teraz ["Junior", "Mid"]! (Zmieniliśmy obiekt na Stercie)
-        System.out.println("Lista: " + objectList); 
+        System.out.println(age);   // 25: змінилася лише копія
+        System.out.println(list);  // [Junior, Mid]: об'єкт у купі той самий
     }
 
-    static void modifyData(int ageCopy, List<String> listCopy) {
-        // Zmienia tylko wartość w ramce stosu metody modifyData
-        ageCopy = 99; 
-        
-        // Używa adresu, by wejść na Stertę i zmodyfikować istniejący obiekt
-        listCopy.add("Mid"); 
-        
-        // Przypisanie nowego obiektu zmienia TYLKO lokalny wskaźnik 'listCopy'. 
-        // Oryginalny 'objectList' w metodzie main() o tym nie wie!
-        listCopy = new ArrayList<>(); 
-        listCopy.add("Senior"); 
+    static void modify(int ageCopy, List<String> listCopy) {
+        ageCopy = 99;                 // змінює лише локальну копію
+        listCopy.add("Mid");          // змінює спільний об'єкт
+        listCopy = new ArrayList<>(); // перенаправляє лише локальне посилання
+        listCopy.add("Senior");       // main() цього не побачить
     }
 }
 \`\`\`
+
+> [!NOTE]
+> У C# є \`ref\`, \`out\` та \`in\`. У Java їх **немає**. Щоб повернути кілька значень, повертайте record, масив або об'єкт-обгортку.
 `
     },
     {
-      title: "2. Klasa String: Niezmienność i String Pool",
+      title: "2. Рядки: String, незмінність, String Pool, StringBuilder",
       content: `
-Klasa \`java.lang.String\` reprezentuje ciąg znaków. Od Javy 9 wewnętrznie przechowuje dane w postaci tablicy bajtów: \`private final byte[] value;\` (wcześniej była to tablica \`char[]\`).
+\`java.lang.String\` — **незмінний** (immutable) рядок. З Java 9 він усередині зберігає \`byte[]\` (компактні рядки: Latin-1 по 1 байту на символ, інакше UTF-16).
 
-### Immutability (Niezmienność)
-Raz utworzony String **nigdy** się nie zmienia. Każda operacja (np. \`.replace()\`, \`.concat()\`) tworzy nowy obiekt na stercie.
-Dlaczego twórcy Javy podjęli taką decyzję?
-1. **Wielowątkowość (Thread-safety):** Niemutowalne obiekty można bezpiecznie udostępniać między wątkami bez ryzyka wyścigu (Race Condition).
-2. **Klucze w HashMap:** Jeśli String użyty jako klucz w mapie zmieniłby się, jego hash uległby zmianie i stracilibyśmy do niego dostęp.
-3. **Bezpieczeństwo:** Klasy systemowe używają Stringów do przekazywania haseł i URL-i. Niezmienność gwarantuje, że haker nie zmieni wartości po tym, jak przeszła ona walidację bezpieczeństwa.
+### Чому String незмінний
 
-### String Pool (Pula Stringów)
-Dzięki niezmienności, JVM optymalizuje pamięć poprzez współdzielenie takich samych napisów w tzw. **String Pool** (wydzielonym fragmencie Sterty).
+1. **Потокобезпечність** — його можна передавати між потоками без синхронізації.
+2. **Ключі в HashMap** — хеш рядка не зміниться після вставки (і кешується в полі \`hash\`).
+3. **Безпека** — шлях до файлу або URL не зміниться після перевірки.
+4. **String Pool** — однакові літерали можна безпечно використовувати спільно.
 
 \`\`\`java
-// 1. Literały trafiają automatycznie do String Pool
-String s1 = "Java"; 
-String s2 = "Java"; 
+String s1 = "Java";
+String s2 = "Java";
+String s3 = new String("Java");   // примусово новий об'єкт
 
-// 2. Słowo 'new' ZMUSZA JVM do utworzenia zupełnie nowego obiektu na stercie (poza pulą)!
-String s3 = new String("Java"); 
+System.out.println(s1 == s2);          // true: той самий об'єкт з пулу
+System.out.println(s1 == s3);          // false: різні об'єкти
+System.out.println(s1.equals(s3));     // true: однаковий вміст
+System.out.println(s1 == s3.intern()); // true: intern() повертає об'єкт з пулу
+\`\`\`
 
-System.out.println(s1 == s2); // true (ten sam adres w String Pool)
-System.out.println(s1 == s3); // false (różne adresy - jeden w puli, drugi obok na stercie)
+> [!CAUTION]
+> Рядки **завжди** порівнюйте через \`equals()\` (або \`equalsIgnoreCase()\`). На відміну від C#, оператор \`==\` для \`String\` порівнює **посилання**, а не вміст.
 
-// 3. Metoda intern() każe JVM sprawdzić, czy wartość jest już w puli
-String s4 = s3.intern(); 
-System.out.println(s1 == s4); // true (intern zwrócił adres z puli)
+### Корисні методи
+
+\`\`\`java
+String s = "  Hello, World  ";
+s.trim();                  // "Hello, World"
+s.strip();                 // те саме, але враховує Unicode-пробіли
+s.isBlank();               // false
+s.length();                // 16
+s.charAt(2);               // 'H'
+s.toUpperCase();           // "  HELLO, WORLD  "
+s.contains("World");       // true
+s.indexOf('o');            // 6
+s.substring(2, 7);         // "Hello"
+s.replace("World", "Java");
+"a,b,,c".split(",");       // ["a", "b", "", "c"]
+String.join("-", "a", "b", "c");      // "a-b-c"
+"ab".repeat(3);            // "ababab"
+"line1\\nline2".lines().count();       // 2
+\`\`\`
+
+### Форматування
+
+\`\`\`java
+String msg = String.format("%-10s|%5d|%8.2f", "Anna", 42, 3.14159);
+// "Anna      |   42|    3.14"
+String msg2 = "Привіт, %s! Тобі %d років.".formatted("Ола", 20);
+System.out.printf("%05d%n", 42);    // 00042; %n — перенос рядка для поточної ОС
+\`\`\`
+
+| Специфікатор | Значення |
+| --- | --- |
+| \`%s\` | рядок (викликає \`toString()\`) |
+| \`%d\` | ціле число |
+| \`%f\`, \`%.2f\` | дробове число, 2 знаки після коми |
+| \`%x\` | шістнадцяткове |
+| \`%,d\` | з розділювачем тисяч |
+| \`%-10s\` / \`%10s\` | вирівнювання ліворуч / праворуч до 10 символів |
+
+### Text blocks (Java 15+)
+
+Аналог raw string literals у C#:
+
+\`\`\`java
+String json = """
+    {
+        "name": "Anna",
+        "age": 20
+    }
+    """;   // спільний відступ обрізається автоматично
+\`\`\`
+
+### StringBuilder
+
+Кожна «зміна» рядка створює новий об'єкт, тому \`s += x\` у циклі має складність O(n²).
+
+\`\`\`java
+StringBuilder sb = new StringBuilder();
+for (int i = 0; i < 1000; i++) {
+    sb.append(i).append(',');
+}
+sb.setLength(sb.length() - 1);  // прибрати останню кому
+sb.insert(0, "[").append("]");
+sb.reverse();
+String result = sb.toString();
+\`\`\`
+
+* **\`StringBuilder\`** — несинхронізований і швидкий. Беріть його в 99% випадків.
+* **\`StringBuffer\`** — синхронізований, legacy.
+`
+    },
+    {
+      title: "3. Масиви",
+      content: `
+Масив у Java — це об'єкт **фіксованого розміру**, який знає свою довжину (поле \`length\`, а не метод).
+
+\`\`\`java
+int[] numbers = new int[5];              // [0, 0, 0, 0, 0]
+int[] primes = {2, 3, 5, 7, 11};
+String[] names = new String[3];          // [null, null, null]
+System.out.println(primes.length);       // 5
+primes[10] = 1;                          // ArrayIndexOutOfBoundsException
+
+int[][] matrix = new int[3][4];          // масив масивів
+int[][] jagged = { {1, 2}, {3, 4, 5}, {6} };
+\`\`\`
+
+> [!NOTE]
+> У Java немає прямокутних багатовимірних масивів \`int[,]\`, як у C#. \`int[][]\` — це завжди масив посилань на окремі масиви (jagged array).
+
+### Як масиви лежать у пам'яті
+
+* **\`int[]\`** — один суцільний блок чисел. Доступ дуже швидкий, бо дані гарно лягають у кеш процесора.
+* **\`String[]\` / \`Point[]\`** — масив **посилань**, а самі об'єкти розкидані по купі. Кожен доступ — це додатковий перехід за посиланням і потенційний cache miss.
+
+### Клас Arrays
+
+\`\`\`java
+int[] a = {5, 3, 1, 4};
+Arrays.sort(a);                              // [1, 3, 4, 5]
+Arrays.binarySearch(a, 4);                   // 2
+Arrays.toString(a);                          // "[1, 3, 4, 5]"
+Arrays.deepToString(new int[][]{{1}, {2}});  // "[[1], [2]]"
+Arrays.fill(a, 7);                           // [7, 7, 7, 7]
+int[] copy = Arrays.copyOf(a, 6);            // [7, 7, 7, 7, 0, 0]
+int[] part = Arrays.copyOfRange(a, 1, 3);    // [7, 7]
+Arrays.equals(a, copy);                      // порівняння вмісту
+System.arraycopy(a, 0, copy, 0, a.length);   // найшвидше копіювання
+List<String> list = Arrays.asList("x", "y"); // список фіксованого розміру
 \`\`\`
 
 > [!WARNING]
-> Z powodu niezmienności, tworzenie napisów w dużej pętli (\`str += "a"\`) jest zabójcze dla wydajności — alokuje tysiące porzuconych obiektów. 
-
-### StringBuilder vs StringBuffer
-Do dynamicznego budowania tekstu używamy klas mutowalnych. Posiadają one wewnętrzną tablicę, która rozszerza swój rozmiar w miarę potrzeby.
-* **\`StringBuilder\`**: Niesynchronizowany, bardzo szybki. To standardowy wybór w 99% przypadków.
-* **\`StringBuffer\`**: Synchronizowany (thread-safe), przez co wolniejszy. Używany tylko w aplikacjach wielowątkowych typu "legacy".
+> \`a.equals(b)\` для масивів порівнює **посилання**, а \`a.toString()\` дає щось на кшталт \`[I@1b6d3586\`. Використовуйте \`Arrays.equals\` і \`Arrays.toString\`.
 `
     },
     {
-      title: "3. Tablice (Arrays) i Memory Layout",
+      title: "4. Керувальні інструкції та switch-вирази",
       content: `
-Tablice to najbardziej podstawowa struktura danych. Mają **stały rozmiar**, zdefiniowany w momencie tworzenia.
-
-### Deklaracja i inicjalizacja
 \`\`\`java
-int[] numbers = new int[5]; // Wypełniona zerami
-int[] initialNumbers = {10, 20, 30, 40, 50}; // Szybka inicjalizacja
-System.out.println("Rozmiar: " + numbers.length); // length to pole finalne, nie metoda!
+if (score > 90) { grade = 'A'; }
+else if (score > 80) { grade = 'B'; }
+else { grade = 'C'; }
 
-// Tablice wielowymiarowe (tablice tablic)
-int[][] matrix = new int[3][3];
-int[][] jaggedArray = { {1, 2}, {3, 4, 5}, {6} }; // Nieregularna (poszarpana)
+String status = age >= 18 ? "дорослий" : "неповнолітній";
+
+for (int i = 0; i < n; i++) { }
+for (String name : names) { }      // for-each: масиви і будь-який Iterable
+while (cond) { }
+do { } while (cond);               // виконається хоча б раз
 \`\`\`
 
-### Co się dzieje w pamięci?
-Różnica między tablicą typów prostych a referencyjnych jest kluczowa dla wydajności:
-1. **Tablica typów prostych (np. \`int[]\`):** JVM alokuje jeden ciągły blok pamięci. Liczby leżą "jedna obok drugiej". Dostęp jest błyskawiczny dzięki ładowaniu ich do pamięci podręcznej procesora (CPU Cache).
-2. **Tablica obiektów (np. \`String[]\`):** JVM alokuje tablicę wskaźników (adresów). Faktyczne obiekty leżą w losowych miejscach na stercie. Odczyt wymaga najpierw pobrania adresu, a potem skoku w inne miejsce pamięci (tzw. zjawisko *Cache Miss*).
+### Мітки (labels) для break/continue
 
-### Kopiowanie tablic
-Używanie pętli \`for\` do kopiowania to anty-wzorzec. Należy używać metod natywnych:
 \`\`\`java
-int[] src = {1, 2, 3};
-int[] dest = new int[3];
-
-// Wywołuje wysoce zoptymalizowany kod napisany w C/C++ wewnątrz maszyny wirtualnej:
-System.arraycopy(src, 0, dest, 0, src.length);
-
-// Lub w sposób bardziej nowoczesny:
-int[] clone = Arrays.copyOf(src, src.length);
-\`\`\`
-`
-    },
-    {
-      title: "4. Instrukcje Sterowania (Control Flow)",
-      content: `
-Java oferuje klasyczny zestaw instrukcji sterujących, rozbudowany o nowoczesne elementy.
-
-### Warunki i Pętle
-\`\`\`java
-// if / else
-if (score > 90) { /* A */ } 
-else if (score > 80) { /* B */ } 
-else { /* C */ }
-
-// Operator trójargumentowy (Ternary Operator)
-String status = (age >= 18) ? "Adult" : "Minor";
-
-// Pętla for klasyczna
-for (int i = 0; i < array.length; i++) { ... }
-
-// Pętla for-each (Enhanced for) - preferowana dla kolekcji i tablic
-for (String name : namesList) { ... }
-
-// Pętla while / do-while
-while (condition) { ... }
-do { ... } while (condition); // Wykona się co najmniej RAZ
-\`\`\`
-
-### Etykiety (Labels) i Break/Continue
-\`\`\`java
-// 'break' przerywa aktualną pętlę, 'continue' przeskakuje do następnej iteracji.
-// Ale co jeśli chcemy przerwać ZEWNĘTRZNĄ pętlę z wewnątrz wewnętrznej?
-outerLoop: 
+outer:
 for (int i = 0; i < 5; i++) {
     for (int j = 0; j < 5; j++) {
-        if (i * j > 10) {
-            break outerLoop; // Przerywa obie pętle natychmiast!
-        }
+        if (i * j > 6) break outer;      // виходить з обох циклів
+        if (j > i) continue outer;       // наступна ітерація зовнішнього циклу
     }
 }
 \`\`\`
 
-### Klasyczny Switch vs Nowoczesny Switch Expression (Java 14+)
-Klasyczny \`switch\` (Statement) był problematyczny przez zjawisko **fall-through** (spadanie do kolejnego case'a po zapomnieniu \`break\`). Nowoczesny \`switch\` jest **wyrażeniem** — zwraca wartość i rozwiązuje ten problem.
+### Класичний switch і switch-вираз (Java 14+)
+
+Класичний \`switch\` має **fall-through**: без \`break\` виконання «провалюється» в наступний \`case\`. У C# це помилка компіляції, а в Java — тиха пастка.
 
 \`\`\`java
-// NOWY SWITCH: Czysty, bez break, używa operatora strzałki (->)
-int numLetters = switch (dayOfWeek) {
+switch (day) {
+    case SATURDAY:
+    case SUNDAY:
+        System.out.println("вихідний");
+        break;                 // забули break — виконається й наступна гілка
+    default:
+        System.out.println("робочий");
+}
+\`\`\`
+
+Сучасний варіант — **switch-вираз** зі стрілками. Він повертає значення, не має fall-through і вимагає **вичерпності** (для enum і sealed-типів — без \`default\`):
+
+\`\`\`java
+int letters = switch (day) {
     case MONDAY, FRIDAY, SUNDAY -> 6;
     case TUESDAY -> 7;
     case THURSDAY, SATURDAY -> 8;
-    case WEDNESDAY -> 9;
-    default -> {
-        // Jeśli blok wymaga wielu linii kodu, zwracamy wartość słowem 'yield'
-        System.out.println("Nieznany dzień");
-        yield 0; 
+    case WEDNESDAY -> {
+        System.out.println("середа");
+        yield 9;               // повернення значення з блоку
     }
 };
 \`\`\`
-Nowy switch jest wyczerpujący (exhaustive). Jeśli robisz switcha po klasie \`Enum\` i nie pokryjesz wszystkich opcji, kod się nie skompiluje!
+
+Від Java 21 \`switch\` уміє зіставляти **за типом** (pattern matching, див. лекцію 08):
+
+\`\`\`java
+String describe(Object o) {
+    return switch (o) {
+        case null -> "null";
+        case Integer i when i > 0 -> "додатне ціле " + i;
+        case Integer i -> "ціле " + i;
+        case String s -> "рядок довжини " + s.length();
+        default -> "щось інше";
+    };
+}
+\`\`\`
 `
     },
     {
-      title: "5. Kontrakt java.lang.Object: equals() i hashCode()",
+      title: "5. Класи: поля, конструктори, static, порядок ініціалізації",
       content: `
-Klasa \`Object\` to korzeń całego drzewa dziedziczenia w Javie. Jeśli nie napiszemy \`extends\`, kompilator dopisze \`extends Object\` automatycznie.
+\`\`\`java
+public class Account {
+    private static int counter = 0;      // одне поле на весь клас
+    private final int id;                // final: присвоюється рівно один раз
+    private String owner;
+    private double balance;
 
-### Domyślna implementacja equals()
-Domyślnie \`equals(Object o)\` wykonuje po prostu \`this == o\`, porównując referencje. Dla klas domenowych (DTO) musimy to nadpisać.
-Zasady (kontrakt) nadpisanego \`equals\`:
-1. **Zwrotność:** \`a.equals(a) == true\`
-2. **Symetryczność:** Jeśli \`a.equals(b) == true\`, to \`b.equals(a) == true\`
-3. **Przechodniość:** Jeśli \`a.equals(b)\` i \`b.equals(c)\`, to \`a.equals(c)\`
-4. **Spójność:** Wielokrotne wywołanie daje ten sam wynik.
+    public Account(String owner) {
+        this(owner, 0.0);                // виклик іншого конструктора: має бути першим
+    }
 
-### Magia hashCode()
-Współpracuje w parze z \`HashMap\` oraz \`HashSet\`. Zwraca wartość numeryczną określającą "kubełek" (bucket), do którego trafi obiekt.
+    public Account(String owner, double initial) {
+        this.id = ++counter;
+        this.owner = owner;
+        this.balance = initial;
+    }
 
-> [!CAUTION]
-> **Złota reguła Javy:** Jeśli zdefiniujesz, że dwa obiekty są równe według \`equals()\`, to ich \`hashCode()\` **MUSI** zwrócić dokładnie taką samą wartość! Złamanie tej zasady sprawi, że wrzucisz obiekt do \`HashSet\`, a następnie program stwierdzi, że go tam nie ma.
+    public static int created() { return counter; }  // статичний метод
+
+    public double getBalance() { return balance; }   // getter, у Java немає властивостей
+    public void deposit(double amount) {
+        if (amount <= 0) throw new IllegalArgumentException("сума має бути > 0");
+        balance += amount;
+    }
+}
+\`\`\`
+
+* Якщо не оголошено жодного конструктора, компілятор додає конструктор без параметрів.
+* Поля без ініціалізації отримують значення за замовчуванням (\`0\`, \`false\`, \`null\`). **Локальні** змінні значень за замовчуванням не мають: читання неініціалізованої змінної — помилка компіляції.
+* **У Java немає властивостей** (\`{ get; set; }\`) — їх замінюють методи \`getX()/setX()\`, а для незмінних даних — records.
+
+### Порядок ініціалізації
 
 \`\`\`java
-public class User {
-    private String email;
-    private int age;
+class Demo {
+    static { System.out.println("1. статичний блок (один раз, при завантаженні класу)"); }
+    { System.out.println("2. блок ініціалізації екземпляра"); }
+    private int x = initX();   // ініціалізатори полів і блоки виконуються в порядку оголошення
+    Demo() { System.out.println("4. тіло конструктора"); }
+    int initX() { System.out.println("3. ініціалізатор поля"); return 1; }
+}
+\`\`\`
+
+Під час наслідування спочатку повністю ініціалізується батьківська частина (\`super(...)\`), а вже потім поля і тіло конструктора дочірнього класу.
+
+> [!CAUTION]
+> Не викликайте в конструкторі методи, які може перевизначити підклас. Перевизначений метод виконається до ініціалізації полів підкласу і побачить там \`null\` або \`0\`.
+`
+    },
+    {
+      title: "6. Клас Object: equals, hashCode, toString",
+      content: `
+Усі класи неявно наслідують \`java.lang.Object\`. Його ключові методи:
+
+| Метод | За замовчуванням | Коли перевизначати |
+| --- | --- | --- |
+| \`equals(Object)\` | \`this == o\` (тотожність) | для класів-значень (DTO, ключі) |
+| \`hashCode()\` | залежить від ідентичності об'єкта | **завжди разом з equals** |
+| \`toString()\` | \`ClassName@1b6d3586\` | майже завжди, для налагодження |
+| \`getClass()\` | клас об'єкта під час виконання | (final) |
+
+### Контракт equals
+
+1. **Рефлексивність**: \`a.equals(a)\`.
+2. **Симетричність**: \`a.equals(b)\` ⇔ \`b.equals(a)\`.
+3. **Транзитивність**: \`a.equals(b) && b.equals(c)\` ⇒ \`a.equals(c)\`.
+4. **Узгодженість**: повторні виклики дають той самий результат.
+5. \`a.equals(null) == false\`.
+
+> [!CAUTION]
+> **Золоте правило:** якщо \`a.equals(b)\`, то \`a.hashCode() == b.hashCode()\`. Порушите його — і \`HashSet.contains\` та \`HashMap.get\` «не знайдуть» об'єкт, який там точно є.
+
+\`\`\`java
+public final class Point {
+    private final int x, y;
+
+    public Point(int x, int y) { this.x = x; this.y = y; }
 
     @Override
     public boolean equals(Object o) {
-        if (this == o) return true; // Szybka ścieżka: to ten sam obiekt
-        if (o == null || getClass() != o.getClass()) return false;
-        User user = (User) o;
-        return age == user.age && Objects.equals(email, user.email);
+        if (this == o) return true;
+        if (!(o instanceof Point p)) return false;
+        return x == p.x && y == p.y;
     }
 
     @Override
     public int hashCode() {
-        // Pod maską: wynik mnożony jest przez liczbę pierwszą 31, by unikać kolizji hashów
-        return Objects.hash(email, age); 
+        return Objects.hash(x, y);    // 31 * (31 + x) + y
+    }
+
+    @Override
+    public String toString() {
+        return "Point(" + x + ", " + y + ")";
     }
 }
 \`\`\`
+
+> [!WARNING]
+> Не змінюйте поля, від яких залежить \`hashCode()\`, коли об'єкт уже лежить у \`HashSet\` або є ключем \`HashMap\`. Об'єкт «загубиться» в неправильному кошику. Найпростіше — робити такі класи незмінними.
 `
     },
     {
-      title: "6. Programowanie Obiektowe (OOP) i V-Table",
+      title: "7. Наслідування та поліморфізм",
       content: `
-Java to w 99% język obiektowy, oparty na klasach, implementujący trzy filary OOP: Hermetyzację, Dziedziczenie i Polimorfizm.
+Клас може наслідувати **лише один** клас (\`extends\`), але реалізовувати багато інтерфейсів (\`implements\`).
 
-### Hermetyzacja (Encapsulation)
-Stan obiektu (pola) powinien być ukryty, a dostęp do niego kontrolowany przez metody publiczne (gettery/settery). Realizuje się to modyfikatorami:
-* \`private\` — widoczne tylko w danej klasie.
-* \`default\` (brak modyfikatora) — widoczne w całym pakiecie (Package-private).
-* \`protected\` — widoczne w pakiecie + w klasach dziedziczących.
-* \`public\` — widoczne wszędzie.
-
-### Dziedziczenie (Inheritance)
-Klasa może dziedziczyć tylko po **JEDNEJ** innej klasie (brak wielokrotnego dziedziczenia klas — rozwiązuje to tzw. Problem Diamentu).
 \`\`\`java
 public class Animal {
-    protected String name;
+    protected final String name;
     public Animal(String name) { this.name = name; }
-    public void makeSound() { System.out.println("..."); }
+    public String sound() { return "..."; }
+    public final String describe() { return name + " каже " + sound(); }
 }
 
 public class Dog extends Animal {
-    public Dog(String name) {
-        super(name); // super() wywołuje konstruktor klasy bazowej
-    }
+    public Dog(String name) { super(name); }   // виклик конструктора батька
 
-    @Override // Adnotacja gwarantująca, że faktycznie nadpisujemy metodę
-    public void makeSound() {
-        System.out.println("Hau!");
-    }
+    @Override
+    public String sound() { return "Гав!"; }
 }
+
+Animal a = new Dog("Рекс");
+System.out.println(a.describe());   // "Рекс каже Гав!"
 \`\`\`
 
-### Polimorfizm i V-Table (Virtual Method Table)
-Możemy przypisać obiekt typu \`Dog\` do zmiennej typu \`Animal\`. Kiedy wywołamy \`animal.makeSound()\`, JVM w czasie działania programu (Runtime) sprawdzi faktyczny typ obiektu i wywoła metodę z klasy \`Dog\`.
+### Ключова відмінність від C#: методи віртуальні за замовчуванням
 
-Jak to działa pod maską? JVM używa **V-Table**. Kiedy klasa jest ładowana do pamięci, tworzona jest dla niej tablica wskaźników do metod. Jeśli \`Dog\` nadpisze metodę \`makeSound\`, wskaźnik w V-Table \`Doga\` zostaje podmieniony z implementacji \`Animal\` na implementację \`Dog\`. Mechanizm ten nazywa się **Dynamic Dispatch**.
+| | C# | Java |
+| --- | --- | --- |
+| Віртуальний метод | потрібно \`virtual\` | **усі** нестатичні не-private методи |
+| Перевизначення | \`override\` (обов'язково) | \`@Override\` (анотація, рекомендовано) |
+| Заборонити перевизначення | \`sealed override\` | \`final\` |
+| Приховування методу | \`new\` | немає (лише для static) |
+| Виклик базової реалізації | \`base.M()\` | \`super.m()\` |
+
+> [!TIP]
+> Завжди ставте \`@Override\`. Якщо ви помилитеся в сигнатурі (наприклад, напишете \`equals(Point p)\` замість \`equals(Object o)\`), компілятор це помітить. Без анотації ви тихо створите **перевантаження**, а не перевизначення.
+
+### Динамічна диспетчеризація
+
+Під час виклику \`a.sound()\` JVM дивиться на **фактичний** тип об'єкта (Dog), а не на тип змінної (Animal). Для цього кожен клас має **таблицю віртуальних методів (vtable)**. Перевантаження (overloading), навпаки, вибирається **під час компіляції** за статичним типом аргументів.
+
+\`\`\`java
+static void print(Object o) { System.out.println("Object"); }
+static void print(String s) { System.out.println("String"); }
+
+Object x = "hello";
+print(x);    // "Object": перевантаження обирається за статичним типом!
+\`\`\`
 `
     },
     {
-      title: "7. Klasy Abstrakcyjne vs Interfejsy",
+      title: "8. Абстрактні класи та інтерфейси",
       content: `
-Kiedy chcemy zdefiniować "szablon" dla klas dziedziczących, stajemy przed wyborem:
+### Абстрактний клас
 
-### Klasa Abstrakcyjna
-Może posiadać pełnoprawny stan (pola niestatyczne) oraz konstruktory, ale nie da się stworzyć jej instancji przez \`new\`.
+Може мати стан (поля), конструктори та реалізовані методи, але створити його екземпляр не можна.
+
 \`\`\`java
-public abstract class GameEntity {
-    private int health = 100; // Ma swój własny stan!
-    public GameEntity() { ... } // Ma konstruktor
-    
-    public void takeDamage(int dmg) { health -= dmg; } // Zaimplementowana
-    public abstract void render(); // Abstrakcyjna (wymaga implementacji)
+public abstract class Shape {
+    private final String name;
+    protected Shape(String name) { this.name = name; }
+
+    public abstract double area();       // підклас мусить реалізувати
+
+    @Override
+    public String toString() {
+        return "%s(площа=%.2f)".formatted(name, area());
+    }
+}
+
+public class Circle extends Shape {
+    private final double r;
+    public Circle(double r) { super("Коло"); this.r = r; }
+    @Override public double area() { return Math.PI * r * r; }
 }
 \`\`\`
 
-### Interfejs
-Czysty kontrakt. Od Javy 8 interfejsy mogą posiadać metody z domyślną implementacją (słowo kluczowe \`default\`). Wprowadzono to, by dodać m.in. metodę \`.stream()\` do kolekcji bez niszczenia kompatybilności wstecznej.
+### Інтерфейс
+
+Контракт без стану екземпляра. Може містити:
+
+* абстрактні методи (неявно \`public abstract\`);
+* \`default\`-методи з реалізацією (Java 8+);
+* \`static\`-методи;
+* \`private\`-методи (Java 9+) як допоміжні для default-методів;
+* константи (неявно \`public static final\`).
+
 \`\`\`java
 public interface Playable {
-    // Każde pole jest domyślnie: public static final (stała)
-    int MAX_PLAYERS = 4; 
+    int MAX_VOLUME = 100;
 
-    // Metoda abstrakcyjna (domyślnie public abstract)
-    void play(); 
+    void play();
 
-    // Metoda domyślna z implementacją
-    default void stop() {
-        System.out.println("Zatrzymano odtwarzanie.");
-    }
+    default void playTwice() { play(); play(); }
+
+    static Playable silent() { return () -> { }; }
 }
 \`\`\`
 
-| Cecha | Klasa Abstrakcyjna | Interfejs |
-| :--- | :--- | :--- |
-| **Stan (Pola)** | Dowolne (private, protected, int, List) | Tylko stałe (\`public static final\`) |
-| **Konstruktor** | Tak | Nie |
-| **Dziedziczenie** | Klasa może rozszerzyć tylko 1 klasę | Klasa może implementować wiele interfejsów |
-| **Przeznaczenie** | Współdzielenie cech i kodu pomiędzy spokrewnionymi obiektami ("JEST") | Definiowanie możliwości/roli obiektu ("POTRAFI") |
+| Ознака | Абстрактний клас | Інтерфейс |
+| --- | --- | --- |
+| Стан (поля) | будь-які | лише константи |
+| Конструктор | є | немає |
+| Скільки можна успадкувати | один | багато |
+| Модифікатори методів | будь-які | public (або private-допоміжні) |
+| Семантика | «є різновидом» (is-a) | «уміє» (can-do) |
+
+> [!NOTE]
+> Якщо клас отримує однаковий default-метод із двох інтерфейсів, компілятор вимагає перевизначити його явно. Вибрати одну з реалізацій можна так: \`A.super.method()\`.
 `
     },
     {
-      title: "8. Parametry Metod: Varargs i Przeciążanie",
+      title: "9. Перевантаження, varargs і records",
       content: `
-### Przeciążanie metod (Method Overloading)
-W jednej klasie może istnieć wiele metod o tej samej nazwie, o ile mają **inną listę parametrów** (typ, liczba lub kolejność). Typ zwracany NIE bierze udziału w rozróżnianiu przeciążeń!
+### Перевантаження методів
+
+Методи з однаковою назвою, але різними **списками параметрів**. Тип результату в розрізненні **не бере участі**.
 
 \`\`\`java
-public int calculate(int a, int b) { return a + b; }
-public double calculate(double a, double b) { return a + b; }
-// BŁĄD KOMPILACJI: public long calculate(int a, int b) { return a + b; }
+int sum(int a, int b) { return a + b; }
+double sum(double a, double b) { return a + b; }
+// long sum(int a, int b) { ... }  // ПОМИЛКА: відрізняється лише тип результату
 \`\`\`
 
-### Varargs (Zmienna liczba argumentów)
-Służy do tworzenia metod przyjmujących dowolną liczbę parametrów danego typu. Używa się trzykropka \`...\`.
-Pod maską, kompilator po prostu zbiera przekazane parametry w **zwykłą tablicę** danego typu.
+У Java **немає параметрів за замовчуванням і іменованих аргументів**, як у C#. Їх замінюють перевантаженнями (телескопічні конструктори) або патерном Builder.
+
+### Varargs
 
 \`\`\`java
-// varargs MUST be the last parameter in the signature!
-public static int sum(String message, int... numbers) {
+static int sum(String label, int... nums) {   // varargs — завжди останній параметр
     int total = 0;
-    // 'numbers' to wewnętrznie int[]
-    for (int num : numbers) { 
-        total += num;
-    }
-    System.out.println(message + ": " + total);
+    for (int n : nums) total += n;            // nums має тип int[]
+    System.out.println(label + ": " + total);
     return total;
 }
 
-// Użycie:
-sum("Wynik", 10, 20);      // Dwa argumenty
-sum("Wynik", 1, 2, 3, 4);  // Cztery argumenty
-sum("Wynik");              // Brak argumentów (tablica pusty int[])
-\`\`\`
-`
-    },
-    {
-      title: "9. Nowoczesne Rekordy (Records) — Java 16",
-      content: `
-Historycznie kod w Javie cierpiał na nadmiarowość (tzw. boilerplate). Aby stworzyć prosty obiekt DTO (Data Transfer Object) do przesyłania danych, trzeba było napisać kilkadziesiąt linii kodu dla prywatnych pól, getterów, hashCode, equals i toString.
-
-Java 16 wprowadziła **Rekordy**, które są idealnym, niemutowalnym nośnikiem danych.
-
-\`\`\`java
-public record UserResponse(UUID id, String email, boolean isActive) {}
+sum("A", 1, 2, 3);
+sum("B");                    // nums = порожній масив
+sum("C", new int[]{4, 5});   // можна передати масив напряму
 \`\`\`
 
-### Co kompilator robi z tym jednym rzędem kodu?
-1. Tworzy klasę \`final\` rozszerzającą ukrytą klasę bazową \`java.lang.Record\`.
-2. Pola \`id\`, \`email\` oraz \`isActive\` stają się \`private final\`.
-3. Automatycznie dostarcza akcesory. Uwaga: nie \`getId()\`, a po prostu \`id()\`!
-4. Automatycznie generuje ultra-wydajne \`equals()\`, \`hashCode()\` oraz \`toString()\` przy pomocy instrukcji bytecode'u \`invokedynamic\`.
+### Records (Java 16+)
 
-### Compact Constructor (Kompaktowy Konstruktor)
-Rekordy pozwalają na dodanie konstruktora służącego tylko do szybkiej walidacji bez pisania przepisywania zmiennych:
+Незмінний носій даних. Аналог \`record\` у C#.
 
 \`\`\`java
-public record ProductDto(String name, BigDecimal price) {
-    // Nie musisz pisać this.name = name!
-    public ProductDto {
-        Objects.requireNonNull(name, "Nazwa jest wymagana");
-        if (price.compareTo(BigDecimal.ZERO) < 0) {
-            throw new IllegalArgumentException("Cena nie może być ujemna");
-        }
+public record Product(String name, BigDecimal price) {
+    public Product {                       // компактний конструктор: валідація
+        Objects.requireNonNull(name, "name");
+        if (price.signum() < 0) throw new IllegalArgumentException("ціна < 0");
     }
-    
-    // Rekordy mogą też mieć swoje własne metody
-    public String getFormattedPrice() {
-        return price + " PLN";
+
+    public Product withPrice(BigDecimal newPrice) {   // "with" вручну
+        return new Product(name, newPrice);
     }
 }
+
+var p = new Product("Кава", new BigDecimal("12.50"));
+p.name();          // аксесор називається name(), а не getName()
+System.out.println(p);  // Product[name=Кава, price=12.50]
 \`\`\`
+
+Компілятор генерує:
+
+1. \`final\`-клас, який наслідує \`java.lang.Record\`;
+2. \`private final\`-поля і канонічний конструктор;
+3. аксесори \`name()\`, \`price()\`;
+4. \`equals\`, \`hashCode\` і \`toString\` за всіма компонентами.
+
+> [!WARNING]
+> Record незмінний лише **поверхнево**. Якщо компонент має тип \`List<String>\`, сам список можна змінити. Робіть захисну копію в компактному конструкторі: \`items = List.copyOf(items);\`.
 `
     }
   ],
   quiz: [
     {
-      question: "Gdy wywołujemy doSomething(List<String> list), i wewnątrz zmienimy metodą list.add(\"test\"), to dlaczego oryginalna lista również ulegnie zmianie pomimo przekazywania przez wartość?",
+      question: "Метод отримує List<String> list і викликає list.add(\"x\"). Чому зміна видна в місці виклику, хоча Java передає параметри за значенням?",
       options: [
-        "Ponieważ Java przekazuje obiekty zawsze przez referencję, a nie przez wartość.",
-        "Ponieważ skopiowaną wartością był adres w pamięci prowadzący do jedynej kopii obiektu Listy na Stercie (Heap).",
-        "Ponieważ kolekcje (List, Set) posiadają wbudowany mechanizm mutacji między-ramkowej.",
-        "Tylko jeśli przypiszemy list = new ArrayList<>() zmiany odzwierciedlą się wyżej."
+        "Бо об'єкти в Java передаються за посиланням",
+        "Бо скопійоване значення — це адреса того самого об'єкта в купі",
+        "Бо колекції мають спеціальний механізм синхронізації",
+        "Зміна не буде видна"
       ],
       answer: 1,
-      explanation: "W Javie przesyłana wartość to skopiowany adres prowadzący do obiektu. Posiadając ten adres, modyfikacja obiektu zmieni go globalnie na stercie."
+      explanation: "Копіюється посилання, тому обидві змінні вказують на той самий об'єкт. А от присвоєння list = new ArrayList<>() всередині методу вже не вплине на змінну в місці виклику."
     },
     {
-      question: "Z jakiego powodu klasa String w Javie została zaprogramowana jako immutable (niezmienna)?",
+      question: "Що виведе: String a = \"hi\"; String b = new String(\"hi\"); System.out.println(a == b);",
       options: [
-        "Umożliwia to zjawisko buforowania napisów (String Pool) w pamięci operacyjnej.",
-        "Zapewnia to absolutne bezpieczeństwo przy komunikacji między wieloma wątkami (Thread-safety).",
-        "Chroni to stan krytycznych kluczy wprowadzonych do kolekcji np. HashMap przed ich zewnętrzną zmianą.",
-        "Wszystkie powyższe powody są kluczowe w architekturze klasy String."
-      ],
-      answer: 3,
-      explanation: "Niezmienność zapewnia buforowanie pamięci, bezpieczeństwo dla wielowątkowości i stabilność logiki używającej Stringów jako identyfikatorów lub kluczy map."
-    },
-    {
-      question: "Co decyduje, czy w Javie zastosować Klasę Abstrakcyjną czy Interfejs?",
-      options: [
-        "Tylko interfejsy potrafią implementować abstrakcyjne metody.",
-        "Jeśli obiekt współdzieli z klasą wspólną logikę (pola prywatne, konstruktor, zmienny stan) -> Klasa Abstrakcyjna. Jeśli opisuje tylko role do spełnienia (kontrakt) -> Interfejs.",
-        "Klasy abstrakcyjnej używa się tylko, by stworzyć rekord, a interfejsu gdy chcemy zainicjować zmienne przez operator new.",
-        "Nie ma różnicy z technicznego punktu widzenia, używa się ich naprzemiennie."
+        "true",
+        "false",
+        "Помилка компіляції",
+        "Залежить від JVM"
       ],
       answer: 1,
-      explanation: "Klasa abstrakcyjna niesie ze sobą 'stan' (zmienne, konstruktory), podczas gdy interfejs (nawet posiadający default method) dotyczy zdefiniowania API / możliwości i jest obdarzony wyłącznie publicznymi stałymi finalnymi."
+      explanation: "new String створює окремий об'єкт поза пулом. Оператор == порівнює посилання, тому результат false. Вміст рядків порівнюють через equals()."
     },
     {
-      question: "W jaki sposób najnowszy (wprowadzony w Java 14) Switch operuje jako tzw. Expression?",
+      question: "Що станеться, якщо перевизначити equals(), але не hashCode()?",
       options: [
-        "Pozwala pisać switch z wykorzystaniem lambd i wymaga zwracania Stringa.",
-        "Przed każdym case wymaga napisania słowa 'break' aby uniknąć pomyłki tzw. fall-through.",
-        "Pozwala na zwrot obliczonej na jego podstawie wartości poprzez zapis przypisania (np. int result = switch...) eliminując po drodze wymóg umieszczania instrukcji break za pomocą zapisu '->'.",
-        "Wcale nie obsługuje wartości zwrotnych, różnica polega wyłącznie w składni wizualnej polegającej na użyciu przecinków."
+        "Нічого, hashCode не пов'язаний з equals",
+        "Помилка компіляції",
+        "HashSet і HashMap працюватимуть некоректно: рівні об'єкти потраплять у різні кошики",
+        "toString() перестане працювати"
       ],
       answer: 2,
-      explanation: "Nowoczesny switch jest traktowany przez Jave jako pełnoprawne 'wyrażenie' zwracające wynik po operatorze ->. Ponadto jest wyczerpujący (exhaustive) co podnosi bezpieczeństwo."
+      explanation: "Хеш-колекції спочатку шукають кошик за hashCode, а вже потім порівнюють через equals. Рівні об'єкти з різними хешами туди просто не дійдуть."
+    },
+    {
+      question: "Чим методи в Java відрізняються від методів у C# щодо віртуальності?",
+      options: [
+        "У Java всі нестатичні, не-private і не-final методи віртуальні за замовчуванням",
+        "У Java потрібно писати virtual",
+        "У Java немає поліморфізму",
+        "Нічим"
+      ],
+      answer: 0,
+      explanation: "У Java немає ключового слова virtual: перевизначити можна будь-який нестатичний, не-private і не-final метод. Заборонити перевизначення можна через final."
+    },
+    {
+      question: "Object x = \"hello\"; маємо перевантаження print(Object) і print(String). Яке буде викликано для print(x)?",
+      options: [
+        "print(String), бо об'єкт насправді є рядком",
+        "print(Object), бо перевантаження обирається за статичним типом під час компіляції",
+        "Помилка компіляції через неоднозначність",
+        "Обидва"
+      ],
+      answer: 1,
+      explanation: "Перевантаження (overloading) обирається статично, а перевизначення (overriding) — динамічно. Статичний тип x — Object."
+    },
+    {
+      question: "Яка перевага switch-виразу (case X ->) порівняно з класичним switch?",
+      options: [
+        "Він швидший",
+        "Немає fall-through, він повертає значення і перевіряє вичерпність",
+        "Він працює лише з рядками",
+        "Він потребує break у кожній гілці"
+      ],
+      answer: 1,
+      explanation: "Стрілкові гілки не «провалюються», switch можна використати як вираз, а для enum і sealed-типів компілятор перевіряє, що оброблено всі варіанти."
     }
   ]
 };

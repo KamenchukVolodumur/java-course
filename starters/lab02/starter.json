@@ -1,0 +1,142 @@
+{
+  "shared": [
+    "mvnw",
+    "mvnw.cmd",
+    ".mvn/wrapper/maven-wrapper.properties",
+    ".gitignore"
+  ],
+  "messages": {
+    "specIntro": {
+      "ua": "Перевірка викладача для етапу 2. Це НЕ заміна вашого StatisticsTest (етап 3): його ви пишете самі.",
+      "en": "The instructor's check for stage 2. It does NOT replace your StatisticsTest (stage 3): you write that one yourself."
+    },
+    "emptyArray": {
+      "ua": "порожній масив",
+      "en": "empty array"
+    },
+    "cliTitle": {
+      "ua": "Перевіряє stats-cli (етапи 4 і 5): запускає зібраний JAR і порівнює вивід та коди виходу із завданням.",
+      "en": "Checks stats-cli (stages 4 and 5): runs the built JAR and compares the output and the exit codes with the task."
+    },
+    "cliHow": {
+      "ua": "Запускайте з кореня проєкту lab02 після `./mvnw clean verify`.",
+      "en": "Run from the root of the lab02 project after `./mvnw clean verify`."
+    },
+    "noJar": {
+      "ua": "Немає JAR-файлу (зберіть проєкт: ./mvnw clean verify):",
+      "en": "No JAR file (build the project: ./mvnw clean verify):"
+    },
+    "onlyComments": {
+      "ua": "лише коментарі",
+      "en": "only comments"
+    },
+    "noArgs": {
+      "ua": "без аргументів",
+      "en": "no arguments"
+    },
+    "unknownOption": {
+      "ua": "невідома опція",
+      "en": "an unknown option"
+    },
+    "missingFile": {
+      "ua": "файл не існує",
+      "en": "the file does not exist"
+    },
+    "notANumber": {
+      "ua": "нечислове значення",
+      "en": "a non-numeric value"
+    },
+    "noNumbers": {
+      "ua": "файл без чисел",
+      "en": "a file without numbers"
+    },
+    "fileNotFound": {
+      "ua": "Файл не знайдено: ",
+      "en": "File not found: "
+    },
+    "badLine": {
+      "ua": "Рядок 2: \\\"abc\\\" не є числом",
+      "en": "Line 2: \\\"abc\\\" is not a number"
+    },
+    "noData": {
+      "ua": "Немає даних",
+      "en": "No data"
+    },
+    "passedWord": {
+      "ua": "Пройдено",
+      "en": "Passed"
+    },
+    "failedWord": {
+      "ua": "провалено",
+      "en": "failed"
+    },
+    "lineWord": {
+      "ua": "рядок",
+      "en": "line"
+    },
+    "expectedWord": {
+      "ua": "очікувалось",
+      "en": "expected"
+    },
+    "gotWord": {
+      "ua": "отримано",
+      "en": "got"
+    },
+    "exitExpected": {
+      "ua": "очікувався код виходу",
+      "en": "expected exit code"
+    }
+  },
+  "readme": {
+    "title": {
+      "ua": "Лабораторна 02: Maven, модульні тести та консольний застосунок",
+      "en": "Lab 02: Maven, Unit Tests and a Command-Line Application"
+    },
+    "intro": {
+      "ua": "Структуру багатомодульного проєкту (етап 1) ви створюєте самі: це частина завдання. Тут лише Maven Wrapper, дані й перевірки.",
+      "en": "You create the multi-module project structure (stage 1) yourself: it is part of the task. Only the Maven Wrapper, the data and the checks are here."
+    },
+    "files": [
+      {
+        "names": [
+          "mvnw",
+          "mvnw.cmd",
+          ".mvn/"
+        ],
+        "status": {
+          "ua": "Maven Wrapper: встановлювати Maven не потрібно",
+          "en": "the Maven Wrapper: you do not need to install Maven"
+        }
+      },
+      {
+        "names": [
+          ".gitignore",
+          "data.txt"
+        ],
+        "status": "given"
+      },
+      {
+        "names": [
+          "stats-core/src/test/.../StatisticsSpecTest"
+        ],
+        "status": {
+          "ua": "перевірка етапу 2 (лежить там, де буде ваш модуль `stats-core`)",
+          "en": "the check of stage 2 (placed where your `stats-core` module will be)"
+        }
+      },
+      {
+        "names": [
+          "CheckCli.java"
+        ],
+        "status": {
+          "ua": "перевірка етапів 4–5 (запускає зібраний JAR)",
+          "en": "the check of stages 4–5 (runs the built JAR)"
+        }
+      }
+    ],
+    "notes": {
+      "ua": "## Як користуватися\n\nРозпакуйте вміст у папку `lab02/` репозиторію і створіть поруч `pom.xml` та модулі `stats-core` і `stats-cli`, як у завданні. Потім:\n\n```bash\n./mvnw verify                        # збірка і всі тести (на Windows: mvnw.cmd)\n./mvnw -pl stats-core test -Dtest=StatisticsSpecTest\njava CheckCli.java                   # після етапу 5\n```\n\n`StatisticsSpecTest` не зараховується в мінімум 12 тестів етапу 3: свої тести напишіть в окремому `StatisticsTest`.",
+      "en": "## How to use\n\nUnpack the contents into the `lab02/` folder of your repository and create `pom.xml` and the `stats-core` and `stats-cli` modules next to them, as in the task. Then:\n\n```bash\n./mvnw verify                        # build and all tests (on Windows: mvnw.cmd)\n./mvnw -pl stats-core test -Dtest=StatisticsSpecTest\njava CheckCli.java                   # after stage 5\n```\n\n`StatisticsSpecTest` does not count towards the minimum of 12 tests of stage 3: write your own tests in a separate `StatisticsTest`."
+    }
+  }
+}

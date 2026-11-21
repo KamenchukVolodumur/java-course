@@ -1,478 +1,283 @@
 export const lab04 = {
   id: "Lab04",
-  title: "Лабораторна 4: Менеджер Контактів",
-  description: "Колекції, Lambda-вирази, Stream API, Comparable/Comparator та обробка винятків на прикладі консольної міні-апки.",
+  title: "Лабораторна 04: Generics, ітератори та колекції",
+  description: "Власний узагальнений кільцевий буфер з fail-fast ітератором, узагальнені методи з обмеженнями і wildcards (PECS), MultiMap на основі Map<K, List<V>>, LRU-кеш на LinkedHashMap і частотний індекс слів.",
   sections: [
     {
-      title: "Опис завдання",
+      title: "Перед початком",
       content: `
 > [!NOTE]
-> **Рекомендовані лекції для цієї лаби:** Лекції 04, 05
+> **Лекції:** 04.8 «Generics», 06.1 «Ітератори», 06.2 «Колекції» · **Час:** 3 год · **Бали:** 10
 
-У цій лабораторній роботі ви створите повноцінну консольну програму — **Менеджер Контактів**. Програма дозволить додавати, шукати, фільтрувати, сортувати та групувати контакти.
+\`\`\`text
+src/main/java/pl/mini/collections/
+├── RingBuffer.java
+├── CollectionUtils.java
+├── MultiMap.java
+├── LruCache.java
+├── WordIndex.java
+└── Main.java      (наданий)
+\`\`\`
 
-Ця лабораторна покриває матеріал **Лекцій 4 і 5**:
-* Інтерфейси \`Comparable\` та \`Comparator\` (Лекція 4)
-* Лямбда-вирази та функціональні інтерфейси (\`Predicate\`, \`Function\`, \`Consumer\`) (Лекція 4)
-* Method References (Лекція 4)
-* Java Collections Framework: \`List\`, \`Set\`, \`Map\` (Лекція 4–5)
-* Stream API: \`filter\`, \`map\`, \`sorted\`, \`collect\` (Лекція 5)
-* \`Collectors.groupingBy\`, \`Collectors.joining\` (Лекція 5)
-* Checked та Unchecked Exceptions, створення власних винятків (Лекція 5)
+### Правила
+
+* Розкоментовуйте блоки \`STAGE N\` у \`Main.java\` по черзі. Вивід має збігатися з очікуваним.
+* Код компілюється **без попереджень** про unchecked/raw types, крім одного місця, позначеного \`@SuppressWarnings("unchecked")\` (створення масиву в \`RingBuffer\`).
+
+> [!CAUTION]
+> Заборонено: сирі типи (\`List\` без параметра), Stream API (його черга — лабораторна 05), класи \`Collections.max\`/\`Collections.addAll\` у відповідних методах \`CollectionUtils\` (реалізуйте самі).
 `
     },
     {
-      title: "Task 1: Модель даних (2 бали)",
+      title: "Швидке повторення теорії",
       content: `
-### 1.1. Клас \`Contact\`
-Створіть клас \`Contact\` у пакеті \`org.example.contacts.model\` з наступними полями:
+### Узагальнений клас і масив T[]
 
 \`\`\`java
-public class Contact implements Comparable<Contact> {
-    private final String firstName;
-    private final String lastName;
-    private final String phone;
-    private final String email;
-    private final ContactGroup group;
+public class Stack<T> {
+    private T[] items;
 
-    // TODO: Конструктор з усіма полями, гетери
-
-    // TODO: Перевизначте toString(), щоб System.out.println(contact) 
-    //       виводив щось типу: "Олег Петренко | ☎ +380501234567 | ✉ oleg@work.com | [Робота]"
-    //       Підказка: використайте String.format()
-
-    // TODO: Реалізуйте compareTo() — сортування за прізвищем, 
-    //       а при однакових прізвищах — за ім'ям.
-}
-\`\`\`
-
-Зверніть увагу:
-* Всі поля \`final\` — об'єкт **іммутабельний** (після створення не може бути змінений).
-* Без \`toString()\` Java виведе щось типу \`Contact@4e50df2e\` (адресу в пам'яті), що марно. Перевизначивши його, ви зможете просто писати \`System.out.println(contact)\`.
-* \`compareTo\` потрібен для сортування через \`Collections.sort()\` та \`stream().sorted()\`.
-
-### 1.2. Enum \`ContactGroup\`
-Створіть enum \`ContactGroup\` у тому ж пакеті:
-
-\`\`\`java
-public enum ContactGroup {
-    FAMILY("Родина"),
-    FRIENDS("Друзі"),
-    WORK("Робота"),
-    UNIVERSITY("Університет"),
-    OTHER("Інше");
-
-    private final String displayName;
-
-    ContactGroup(String displayName) {
-        this.displayName = displayName;
-    }
-
-    public String getDisplayName() {
-        return displayName;
+    @SuppressWarnings("unchecked")
+    public Stack(int capacity) {
+        items = (T[]) new Object[capacity];     // new T[n] неможливо через стирання типів
     }
 }
 \`\`\`
 
-### 1.3. Власний виняток \`DuplicateContactException\`
-Створіть клас \`DuplicateContactException\` у пакеті \`org.example.contacts.exception\`:
+### Власний ітератор (у Java немає yield return)
 
 \`\`\`java
-public class DuplicateContactException extends Exception {
-    public DuplicateContactException(String message) {
-        super(message);
-    }
-}
-\`\`\`
-
-Це **checked exception** (наслідує \`Exception\`). Він буде кидатися при спробі додати контакт з телефоном, який вже існує у базі.
-
-> [!IMPORTANT]
-> **Питання для роздумів:** Чому ми використали \`Exception\`, а не \`RuntimeException\`? Тому що дублікат контакту — це ситуація, яку програма **може і повинна** обробити (наприклад, вивести повідомлення користувачу), а не фатальна помилка. Checked exceptions змушують програміста явно обробляти такі випадки.
-`
-    },
-    {
-      title: "Task 2: Сервіс управління контактами (3 бали)",
-      content: `
-Створіть клас \`ContactService\` у пакеті \`org.example.contacts.service\`. Цей клас міститиме всю бізнес-логіку.
-
-### Стартовий код (скелет класу):
-\`\`\`java
-package org.example.contacts.service;
-
-import org.example.contacts.exception.DuplicateContactException;
-import org.example.contacts.model.Contact;
-import org.example.contacts.model.ContactGroup;
-
-import java.util.*;
-import java.util.stream.*;
-
-public class ContactService {
-    private final List<Contact> contacts = new ArrayList<>();
-
-    /**
-     * Додає контакт до списку.
-     * @throws DuplicateContactException якщо контакт з таким номером вже існує.
-     */
-    public void addContact(Contact contact) throws DuplicateContactException {
-        // TODO: Перевірити, чи не існує контакт з таким самим телефоном.
-        //       Використайте stream() + anyMatch() з Predicate.
-        //       Якщо існує — кинути DuplicateContactException.
-        //       Інакше — додати до списку.
-    }
-
-    /**
-     * Повертає всі контакти, відсортовані природнім порядком (Comparable).
-     */
-    public List<Contact> getAllSorted() {
-        // TODO: Використайте stream() + sorted() + collect(Collectors.toList())
-        return List.of();
-    }
-
-    /**
-     * Шукає контакти за частковим збігом імені або прізвища (case-insensitive).
-     */
-    public List<Contact> searchByName(String query) {
-        // TODO: Використайте stream() + filter() з лямбдою,
-        //       яка перевіряє firstName і lastName через toLowerCase().contains()
-        return List.of();
-    }
-
-    /**
-     * Повертає контакти, відсортовані за переданим Comparator.
-     * Наприклад: за email, за групою, або за ім'ям у зворотному порядку.
-     */
-    public List<Contact> getAllSortedBy(Comparator<Contact> comparator) {
-        // TODO: Використайте stream() + sorted(comparator) + collect()
-        return List.of();
-    }
-
-    /**
-     * Групує контакти за їхньою групою (ContactGroup).
-     * Повертає Map, де ключ — група, значення — список контактів.
-     */
-    public Map<ContactGroup, List<Contact>> groupByCategory() {
-        // TODO: Використайте stream() + Collectors.groupingBy()
-        //       з method reference Contact::getGroup
-        return Map.of();
-    }
-
-    /**
-     * Повертає кількість контактів у кожній групі.
-     */
-    public Map<ContactGroup, Long> countByCategory() {
-        // TODO: Використайте Collectors.groupingBy() + Collectors.counting()
-        return Map.of();
-    }
-
-    /**
-     * Повертає всі унікальні email-адреси, зібрані в один рядок через кому.
-     */
-    public String getAllEmailsAsString() {
-        // TODO: Використайте stream() + map(Contact::getEmail)
-        //       + distinct() + Collectors.joining(", ")
-        return "";
-    }
-
-    /**
-     * Перевіряє, чи є в базі хоча б один контакт з вказаної групи.
-     */
-    public boolean hasContactsInGroup(ContactGroup group) {
-        // TODO: Використайте stream() + anyMatch()
-        return false;
-    }
-
-    /**
-     * Повертає Optional з контактом, у якого найдовше прізвище.
-     */
-    public Optional<Contact> findWithLongestLastName() {
-        // TODO: Використайте stream() + max() з Comparator.comparingInt(...)
-        return Optional.empty();
-    }
-}
-\`\`\`
-
-### Що потрібно реалізувати:
-Замініть кожен \`// TODO\` на робочу імплементацію з використанням **Stream API**, **лямбда-виразів** та **method references**.
-
-> [!TIP]
-> Намагайтеся використовувати **method references** (\`Contact::getEmail\`, \`String::toLowerCase\`) там, де це можливо, замість повних лямбда-виразів. Це робить код компактнішим і читабельнішим.
-`
-    },
-    {
-      title: "Task 3: Консольний інтерфейс (2 бали)",
-      content: `
-Створіть клас \`Main\` у пакеті \`org.example.contacts\` з інтерактивним меню:
-
-\`\`\`java
-public class Main {
-    public static void main(String[] args) {
-        ContactService service = new ContactService();
-        Scanner scanner = new Scanner(System.in);
-
-        // Наповнити початковими даними (seed)
-        seedData(service);
-
-        while (true) {
-            System.out.println("\\n=== Менеджер Контактів ===");
-            System.out.println("1. Показати всі контакти");
-            System.out.println("2. Додати контакт");
-            System.out.println("3. Пошук за ім'ям");
-            System.out.println("4. Сортувати за...");
-            System.out.println("5. Групувати за категорією");
-            System.out.println("6. Статистика");
-            System.out.println("0. Вихід");
-            System.out.print("Ваш вибір: ");
-
-            String choice = scanner.nextLine().trim();
-            switch (choice) {
-                case "1" -> handleShowAll(service);
-                case "2" -> handleAddContact(service, scanner);
-                case "3" -> handleSearch(service, scanner);
-                case "4" -> handleSortMenu(service, scanner);
-                case "5" -> handleGroupByCategory(service);
-                case "6" -> handleShowStats(service);
-                case "0" -> {
-                    System.out.println("До побачення!");
-                    return;
-                }
-                default -> System.out.println("Невідома команда.");
-            }
+@Override
+public Iterator<T> iterator() {
+    return new Iterator<>() {
+        private int cursor = 0;
+        @Override public boolean hasNext() { return cursor < size; }
+        @Override public T next() {
+            if (!hasNext()) throw new NoSuchElementException();
+            return items[cursor++];
         }
-    }
-
-    // ↓↓↓ Це допоміжні UI-методи (обробники меню). ↓↓↓
-    // Вони НЕ містять бізнес-логіки!
-    // Їх єдина роль: зчитати дані з консолі → викликати метод service → вивести результат.
-
-    private static void handleShowAll(ContactService service) {
-        // TODO: Викличте service.getAllSorted() і виведіть кожен контакт через forEach
-    }
-
-    private static void handleAddContact(ContactService service, Scanner scanner) {
-        // TODO: Запитайте у користувача ім'я, прізвище, телефон, email, групу
-        //       Створіть об'єкт: new Contact(firstName, lastName, phone, email, group)
-        //       Викличте: service.addContact(contact)
-        //       Оберніть у try-catch (DuplicateContactException)
-    }
-
-    private static void handleSearch(ContactService service, Scanner scanner) {
-        // TODO: Запитайте ім'я → викличте service.searchByName(query)
-    }
-
-    private static void handleSortMenu(ContactService service, Scanner scanner) {
-        // TODO: Покажіть підменю сортування (за прізвищем, email, групою)
-    }
-
-    private static void handleGroupByCategory(ContactService service) {
-        // TODO: Викличте service.groupByCategory() і виведіть результат
-    }
-
-    private static void handleShowStats(ContactService service) {
-        // TODO: Виведіть статистику (кількість, групи, найдовше прізвище)
-    }
-
-    private static void seedData(ContactService service) {
-        // Реалізація нижче
-    }
+    };
 }
 \`\`\`
 
-> [!IMPORTANT]
-> Зверніть увагу на розділення відповідальностей:
-> * **\`ContactService\`** містить бізнес-логіку: \`addContact()\`, \`searchByName()\`, \`getAllSorted()\` — працює з даними.
-> * **\`Main\`** містить лише UI-обробники: \`handleAddContact()\` зчитує текст з консолі (\`Scanner\`) і передає його в \`service.addContact()\`. Назви починаються з \`handle\`, щоб було видно, що це обробники подій меню, а не бізнес-методи.
+### Fail-fast: лічильник модифікацій
 
-### Реалізація пунктів меню:
-
-**Пункт 2 — Додати контакт.** Запитайте у користувача ім'я, прізвище, телефон, email та групу. Для вибору групи виведіть список із \`ContactGroup.values()\`. Оберніть виклик \`service.addContact()\` у блок \`try-catch (DuplicateContactException e)\`, щоб вивести зрозуміле повідомлення замість краху програми.
-
-**Пункт 4 — Сортувати за...** Покажіть підменю:
-\`\`\`
-  a) За прізвищем (натуральний порядок — Comparable)
-  b) За email
-  c) За групою, потім за прізвищем
-\`\`\`
-Для варіанту *b* передайте \`Comparator.comparing(Contact::getEmail)\`.
-Для варіанту *c* використайте ланцюговий компаратор:
 \`\`\`java
-Comparator.comparing(Contact::getGroup)
-          .thenComparing(Contact::getLastName)
-\`\`\`
+private int modCount;                   // збільшуємо при кожній структурній зміні
 
-**Пункт 5 — Групувати за категорією.** Викличте \`service.groupByCategory()\` і виведіть результат у форматі:
-\`\`\`
---- Робота ---
-  Петренко Олег — +380501234567
-  Іванова Марія — +380671112233
---- Родина ---
-  Каменчук Андрій — +380931234567
-\`\`\`
-Для форматування використайте \`forEach\` на \`Map\` з лямбдою.
-
-**Пункт 6 — Статистика.** Виведіть:
-* Загальну кількість контактів (\`contacts.size()\`).
-* Кількість контактів у кожній групі (\`countByCategory()\`).
-* Список усіх email через кому (\`getAllEmailsAsString()\`).
-* Контакт з найдовшим прізвищем (\`findWithLongestLastName()\` — зверніть увагу, що повертається \`Optional\`, тому використайте \`ifPresentOrElse\`).
-
-### Початкові дані (seed):
-Створіть метод \`seedData\`, який додає 6–8 тестових контактів у різних групах, щоб не вводити їх вручну при кожному запуску:
-\`\`\`java
-private static void seedData(ContactService service) {
-    try {
-        service.addContact(new Contact("Олег", "Петренко", "+380501234567",
-            "oleg@work.com", ContactGroup.WORK));
-        service.addContact(new Contact("Марія", "Іванова", "+380671112233",
-            "maria@gmail.com", ContactGroup.FRIENDS));
-        service.addContact(new Contact("Андрій", "Каменчук", "+380931234567",
-            "andrii@family.com", ContactGroup.FAMILY));
-        service.addContact(new Contact("Катерина", "Бондаренко", "+380661234567",
-            "katya@uni.edu", ContactGroup.UNIVERSITY));
-        service.addContact(new Contact("Дмитро", "Шевченко", "+380991234567",
-            "dmytro@work.com", ContactGroup.WORK));
-        service.addContact(new Contact("Юлія", "Коваленко", "+380731234567",
-            "yulia@gmail.com", ContactGroup.FRIENDS));
-    } catch (DuplicateContactException e) {
-        System.err.println("Помилка ініціалізації: " + e.getMessage());
-    }
+// в ітераторі:
+private final int expectedModCount = modCount;
+private void checkForComodification() {
+    if (modCount != expectedModCount) throw new ConcurrentModificationException();
 }
+\`\`\`
+
+Саме так працюють \`ArrayList\` і \`HashMap\`.
+
+### PECS
+
+\`\`\`java
+static <T> void copy(Iterable<? extends T> src, Collection<? super T> dst)   // з src читаємо, у dst пишемо
+static <T extends Comparable<? super T>> T max(Iterable<? extends T> items)  // Comparable може бути оголошено в надкласі
+\`\`\`
+
+### Map: computeIfAbsent і merge
+
+\`\`\`java
+map.computeIfAbsent(key, k -> new ArrayList<>()).add(value);
+counts.merge(word, 1, Integer::sum);
+\`\`\`
+
+### LinkedHashMap як LRU-кеш
+
+\`\`\`java
+new LinkedHashMap<K, V>(16, 0.75f, true) {          // accessOrder = true: get переносить у кінець
+    @Override
+    protected boolean removeEldestEntry(Map.Entry<K, V> eldest) {
+        return size() > capacity;                    // після put видалити найстаріший
+    }
+};
 \`\`\`
 `
     },
     {
-      title: "Task 4: Додаткові завдання (3 бали)",
+      title: "Очікуваний вивід",
       content: `
-### 4.1. Валідація вхідних даних (1 бал)
-Створіть клас \`ContactValidator\` з методом:
-\`\`\`java
-public static void validate(String firstName, String lastName,
-                             String phone, String email)
-                             throws InvalidContactDataException { ... }
+Так має виглядати вивід \`Main\` зі стартового проєкту, коли розкоментовано всі етапи:
+
+\`\`\`text
+2 false
+3 true b
+b c d
+OK: null
+[b, c, d]
+OK: CME
+[c, d, e]
+OK: remove
+9
+banana
+[3, 9, 2, c, d, e]
+[3, 9]
+6.5
+OK: empty
+[1, 3] [] 3
+[a] 1
+OK: read-only
+[x, z]
+[be=2, to=2]
+[1, 2] []
 \`\`\`
-
-Створіть новий **unchecked exception** \`InvalidContactDataException\` (наслідує \`RuntimeException\`). Метод повинен перевіряти:
-* Ім'я та прізвище не можуть бути порожніми (\`isBlank()\`).
-* Телефон повинен починатися з \`+\` і містити лише цифри (перевірте за допомогою \`String.matches("\\\\+\\\\d+")\`).
-* Email повинен містити символ \`@\`.
-
-> [!IMPORTANT]
-> **Чому тут \`RuntimeException\`?** Тому що некоректні дані від користувача — це **помилка програмування** (або UI), яку не завжди є сенс обробляти через \`try-catch\`. Це ілюструє різницю між checked та unchecked exceptions з Лекції 5.
-
-### 4.2. Функціональний фільтр (1 бал)
-Додайте метод у \`ContactService\`, який приймає довільний фільтр як параметр:
-\`\`\`java
-public List<Contact> filterBy(Predicate<Contact> predicate) {
-    return contacts.stream()
-                   .filter(predicate)
-                   .collect(Collectors.toList());
-}
-\`\`\`
-
-Використайте його у \`Main\` для створення складних фільтрів:
-\`\`\`java
-// Знайти всіх з групи WORK, чий email містить "work"
-Predicate<Contact> workFilter = c -> c.getGroup() == ContactGroup.WORK;
-Predicate<Contact> emailFilter = c -> c.getEmail().contains("work");
-
-// Комбінуємо предикати через .and()
-List<Contact> result = service.filterBy(workFilter.and(emailFilter));
-\`\`\`
-
-### 4.3. Трансформація та експорт (1 бал)
-Додайте метод, який перетворює список контактів у список рядків у форматі CSV:
-\`\`\`java
-public List<String> exportToCsv() {
-    return contacts.stream()
-        .sorted()
-        .map(c -> String.join(",",
-            c.getFirstName(),
-            c.getLastName(),
-            c.getPhone(),
-            c.getEmail(),
-            c.getGroup().name()))
-        .collect(Collectors.toList());
-}
-\`\`\`
-
-Додайте пункт меню "7. Експорт у CSV", який виведе результат у консоль (кожен рядок — один контакт). У наступних лабораторних ми навчимося записувати це у файл.
 `
     },
     {
-      title: "Структура проекту",
+      title: "Етап 1: RingBuffer<T> (2 б.)",
       content: `
-Фінальна структура вашого проекту повинна мати вигляд:
+Кільцевий буфер фіксованої місткості: коли він заповнений, новий елемент **перезаписує найстаріший**. Застосування: останні N подій, ковзне вікно вимірювань.
+
+\`\`\`java
+public class RingBuffer<T> implements Iterable<T> {
+    public RingBuffer(int capacity);   // capacity <= 0 -> IllegalArgumentException
+    public void add(T item);           // null -> NullPointerException
+    public T get(int index);           // 0 — найстаріший; поза [0, size) -> IndexOutOfBoundsException
+    public int size();
+    public int capacity();
+    public boolean isFull();
+    public Iterator<T> iterator();     // від найстарішого до найновішого
+}
 \`\`\`
-ContactManager/
-├── pom.xml
-└── src/
-    ├── main/java/org/example/contacts/
-    │   ├── Main.java
-    │   ├── model/
-    │   │   ├── Contact.java
-    │   │   └── ContactGroup.java
-    │   ├── service/
-    │   │   └── ContactService.java
-    │   └── exception/
-    │       ├── DuplicateContactException.java
-    │       └── InvalidContactDataException.java
-    └── test/java/org/example/contacts/
-        └── service/
-            └── ContactServiceTest.java  (бонус)
-\`\`\`
+
+* Зберігання: масив \`T[]\`, індекс голови \`head\` (найстаріший) і \`size\`. Фізичний індекс i-го елемента: \`(head + i) % capacity\`.
+* \`add\` працює за **O(1)**: жодних зсувів масиву.
 
 > [!TIP]
-> **Бонусне завдання:** Напишіть 3–4 модульних тести для \`ContactService\` (з використанням JUnit 5, який ви вивчили у Лабораторній 2). Наприклад:
-> * \`addContact_DuplicatePhone_ThrowsException\` — перевірка, що при додаванні дубліката кидається виняток (\`assertThrows\`).
-> * \`searchByName_PartialMatch_ReturnsResults\` — перевірка пошуку.
-> * \`groupByCategory_ReturnsCorrectGroups\` — перевірка групування.
+> Намалюйте на папері масив з 3 комірок і пройдіть \`add("a")\` … \`add("d")\`, записуючи \`head\` і \`size\` після кожного кроку.
+`
+    },
+    {
+      title: "Етап 2: Fail-fast ітератор і toString (2 б.)",
+      content: `
+1. Додайте поле \`modCount\` і збільшуйте його в кожному \`add\`.
+2. Ітератор запам'ятовує \`modCount\` під час створення. Якщо в \`next()\` значення відрізняється → \`ConcurrentModificationException\`.
+3. \`iterator().remove()\` не підтримується (поведінка за замовчуванням — \`UnsupportedOperationException\`).
+4. \`next()\` після кінця → \`NoSuchElementException\`.
+5. \`toString()\` у форматі \`[b, c, d]\` (порожній буфер — \`[]\`). Використайте \`StringJoiner(", ", "[", "]")\`.
+
+> [!NOTE]
+> Чому \`ConcurrentModificationException\`, хоча потік один? Назва історична: виняток означає «колекцію змінили під час обходу», а не «гонка потоків». У нашому прикладі \`add("e")\` зсуває \`head\`, і ітератор інакше тихо повернув би неправильні елементи.
+`
+    },
+    {
+      title: "Етап 3: Узагальнені методи і PECS (2 б.)",
+      content: `
+Клас \`CollectionUtils\` (final, приватний конструктор):
+
+\`\`\`java
+public static <T extends Comparable<? super T>> T max(Iterable<? extends T> items);
+public static <T> T max(Iterable<? extends T> items, Comparator<? super T> cmp);
+public static <T> void copyInto(Iterable<? extends T> src, Collection<? super T> dst);
+public static <T> List<T> filter(Iterable<? extends T> src, Predicate<? super T> p);
+public static double sum(Iterable<? extends Number> numbers);
+\`\`\`
+
+* \`max\` для порожньої колекції → \`NoSuchElementException\`. За рівних значень повертається **перше**.
+* \`filter\` повертає **новий** \`ArrayList\`, вхід не змінюється.
+* \`sum\` використовує \`Number.doubleValue()\`.
+
+Спробуйте пояснити собі (або викладачу), чому:
+
+* \`copyInto(List<Integer>, List<Object>)\` компілюється, а з сигнатурою \`copyInto(Iterable<T>, Collection<T>)\` — ні;
+* у \`max\` стоїть \`Comparable<? super T>\`: з \`Comparable<T>\` не вийде знайти максимум у \`List<java.sql.Timestamp>\`, бо \`Timestamp\` реалізує \`Comparable<Date>\`.
+`
+    },
+    {
+      title: "Етап 4: MultiMap<K, V> (2 б.)",
+      content: `
+Мапа, у якій одному ключу відповідає **список** значень (як \`Multimap\` у Guava).
+
+\`\`\`java
+public class MultiMap<K, V> {
+    public void put(K key, V value);
+    public List<V> get(K key);            // незмінне ПРЕДСТАВЛЕННЯ; для відсутнього ключа — порожній список
+    public boolean remove(K key, V value);// видаляє одне входження; останнє значення -> ключ теж зникає
+    public Set<K> keys();                 // у порядку першої вставки
+    public int size();                    // загальна кількість значень
+}
+\`\`\`
+
+* Усередині — \`Map<K, List<V>> map = new LinkedHashMap<>()\`.
+* \`put\` — одним рядком через \`computeIfAbsent\`.
+* \`get\` повертає \`Collections.unmodifiableList(...)\` або \`List.of()\`, і **ніколи** \`null\`.
+* \`size()\` має працювати за **O(1)**: підтримуйте окремий лічильник.
+
+> [!WARNING]
+> Якщо \`remove\` не прибиратиме порожні списки, \`keys()\` повертатиме «мертві» ключі, а мапа поступово розростатиметься. Інваріант: **у мапі немає порожніх списків**.
+`
+    },
+    {
+      title: "Етап 5: LRU-кеш і частотний індекс (2 б.)",
+      content: `
+### LruCache<K, V>
+
+\`\`\`java
+public class LruCache<K, V> extends LinkedHashMap<K, V> {
+    public LruCache(int capacity);   // capacity <= 0 -> IllegalArgumentException
+}
+\`\`\`
+
+Використайте конструктор \`LinkedHashMap(int, float, boolean accessOrder)\` і перевизначте \`removeEldestEntry\`.
+
+### WordIndex
+
+\`\`\`java
+public class WordIndex {
+    public WordIndex(String text);
+    public List<Map.Entry<String, Integer>> top(int n);   // n найчастіших слів
+    public List<Integer> linesOf(String word);              // номери рядків (з 1), за зростанням, без повторів
+}
+\`\`\`
+
+* Слова — послідовності літер (\`text.split("[^\\\\p{L}]+")\`), регістр не враховується.
+* Частоти: \`Map<String, Integer>\` + \`merge\`.
+* Рядки: \`Map<String, TreeSet<Integer>>\` (або ваш \`MultiMap\` з перевіркою на повтори).
+* \`top\`: сортування за спаданням частоти, при рівності — за алфавітом. Сортуйте \`new ArrayList<>(counts.entrySet())\` компаратором, складеним з \`Map.Entry.comparingByValue(...)\` і \`thenComparing(Map.Entry.comparingByKey())\`.
+
+Закомітьте, позначте тегом \`lab04\` і запуште.
 `
     }
   ],
   quiz: [
     {
-      question: "Чим відрізняється `Comparable` від `Comparator`?",
+      question: "Чому в RingBuffer масив створюють як (T[]) new Object[capacity]?",
       options: [
-        "Comparable визначає природній порядок сортування ВСЕРЕДИНІ самого класу (метод compareTo), а Comparator — це ЗОВНІШНІЙ об'єкт, який задає альтернативний порядок (метод compare)",
-        "Comparable працює тільки зі String, а Comparator — з будь-яким типом",
-        "Comparable — це клас, а Comparator — інтерфейс",
-        "Різниці немає, це синоніми"
-      ],
-      answer: 0,
-      explanation: "Comparable<T> реалізується самим класом і визначає його 'натуральний' порядок (наприклад, прізвище). Comparator<T> — це окремий об'єкт, який можна створити через лямбду для будь-якого альтернативного сортування (наприклад, за email чи за групою)."
-    },
-    {
-      question: "Що робить метод `Collectors.groupingBy(Contact::getGroup)`?",
-      options: [
-        "Сортує контакти за групою",
-        "Видаляє дублікати груп",
-        "Створює Map<ContactGroup, List<Contact>>, де ключ — група, а значення — список контактів цієї групи",
-        "Фільтрує контакти, залишаючи лише ті, що мають групу"
-      ],
-      answer: 2,
-      explanation: "Collectors.groupingBy() — це термінальна операція Stream, яка розподіляє елементи по групах, створюючи Map. Method reference Contact::getGroup вказує, за яким полем групувати."
-    },
-    {
-      question: "Що станеться, якщо не обробити DuplicateContactException (checked exception) у коді?",
-      options: [
-        "Програма скомпілюється, але впаде при запуску",
-        "Код не скомпілюється — компілятор Java ВИМАГАЄ обробити checked exceptions через try-catch або throws",
-        "Нічого, checked exceptions ігноруються автоматично",
-        "Компілятор видасть попередження (warning), але код скомпілюється"
+        "Так швидше",
+        "Через стирання типів new T[n] неможливий: тип T невідомий під час виконання",
+        "Object[] займає менше пам'яті",
+        "Це помилка"
       ],
       answer: 1,
-      explanation: "Це ключова відмінність checked exceptions від unchecked (RuntimeException). Компілятор Java змушує програміста явно вказати, що він обробляє цей виняток (try-catch) або передає його далі (throws у сигнатурі методу)."
+      explanation: "Під час виконання T стерто до Object. Приведення безпечне, доки масив не «втікає» назовні як T[]."
     },
     {
-      question: "Як правильно скомбінувати два предикати, щоб знайти контакти з групи WORK, чий email містить 'work'?",
+      question: "Яка сигнатура дозволяє скопіювати List<Integer> у List<Number> і в List<Object>?",
       options: [
-        "workFilter.and(emailFilter)",
-        "workFilter + emailFilter",
-        "Predicate.combine(workFilter, emailFilter)",
-        "workFilter && emailFilter"
+        "<T> void copy(List<T> src, List<T> dst)",
+        "<T> void copy(Iterable<? extends T> src, Collection<? super T> dst)",
+        "void copy(List<?> src, List<?> dst)",
+        "<T> void copy(Collection<? super T> src, Iterable<? extends T> dst)"
       ],
-      answer: 0,
-      explanation: "Інтерфейс Predicate<T> має default-методи and(), or(), negate(), які дозволяють комбінувати предикати в складні умови без написання нових лямбд."
+      answer: 1,
+      explanation: "PECS: джерело — producer (extends), приймач — consumer (super)."
+    },
+    {
+      question: "Що робить accessOrder = true у конструкторі LinkedHashMap?",
+      options: [
+        "Сортує ключі",
+        "Кожне звертання (get/put) переносить запис у кінець, тож першим лишається найдавніше використаний",
+        "Робить мапу потокобезпечною",
+        "Забороняє null"
+      ],
+      answer: 1,
+      explanation: "Разом з removeEldestEntry це готова реалізація LRU-кешу."
     }
   ]
 };

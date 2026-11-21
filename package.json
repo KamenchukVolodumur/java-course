@@ -5,7 +5,10 @@
   "type": "module",
   "homepage": "https://KamenchukVolodumur.github.io/java-course",
   "scripts": {
+    "starters": "node scripts/build-starters.mjs",
+    "predev": "npm run starters",
     "dev": "vite",
+    "prebuild": "npm run starters",
     "build": "vite build",
     "lint": "oxlint",
     "preview": "vite preview",

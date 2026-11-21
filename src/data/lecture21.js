@@ -1,96 +1,95 @@
 export const lecture21 = {
   id: "21",
-  title: "Wykład 21: Wzorce Projektowe w Praktyce — Kiedy Stosować, Kiedy Nie, i Jak Łączyć",
-  description: "Praktyczne zastosowanie wzorców GoF w rzeczywistych systemach: kompozycja wzorców, antywzorce, refaktoryzacja kodu produkcyjnego oraz pułapki nadmiernej abstrakcji.",
+  title: "Лекція 21: Патерни на практиці — коли застосовувати, коли ні і як поєднувати",
+  description: "Практичне застосування патернів GoF у реальних системах: Builder, Factory, Observer, Strategy і Decorator на прикладах із production-коду, поєднання патернів, антипатерни (глобальний стан, over-engineering, God Object) і пастки надмірної абстракції.",
   sections: [
     {
-      title: "1. Po co ten wykład? Wzorce to nie teoria — to narzędzia",
+      title: "1. Навіщо ця лекція: патерни — це інструменти, а не теорія",
       content: `
-Na Wykładzie 16 poznaliśmy definicje wzorców GoF (Singleton, Factory, Builder, Observer, Strategy, itd.) i zasady SOLID. Ale definicja to nie zrozumienie. Prawdziwe zrozumienie przychodzi dopiero, gdy odpowiesz na trzy pytania:
-1. **Kiedy** powinienem użyć tego wzorca?
-2. **Kiedy NIE** powinienem go używać?
-3. **Jak łączyć** kilka wzorców w jednym systemie?
+У лекції 16 ми розібрали визначення патернів GoF і принципи SOLID. Але знати визначення ще не означає розуміти патерн. Розуміння приходить, коли можеш відповісти на три питання:
 
-Ten wykład jest praktyczny. Nie będziemy powtarzać definicji. Zamiast tego pokażemy **rzeczywiste scenariusze** z kodu produkcyjnego, antywzorce (typowe błędy) i refaktoryzacje.
+1. **Коли** варто застосувати цей патерн?
+2. **Коли НЕ** варто його застосовувати?
+3. **Як поєднати** кілька патернів в одній системі?
+
+Ця лекція практична: замість повторення визначень — **реальні сценарії**, антипатерни і рефакторинг.
 
 > [!IMPORTANT]
-> **Najważniejsza zasada:** Wzorzec projektowy stosujemy **wtedy, gdy pojawia się problem**. Nigdy nie "wymyślamy" problemu, żeby zastosować wzorzec. To się nazywa **over-engineering** i jest jednym z najczęstszych grzechów ambitnych Juniorów.
+> **Головне правило:** патерн застосовують **тоді, коли з'являється проблема**. Не вигадуйте проблему, щоб застосувати патерн. Це **over-engineering**, один із найчастіших гріхів амбітних початківців.
 `
     },
     {
-      title: "2. Builder — Kiedy konstruktor staje się koszmarem",
+      title: "2. Builder: коли конструктор стає жахіттям",
       content: `
-### Problem (tzw. Telescoping Constructor):
-Masz klasę z 8 polami, z których 5 jest opcjonalnych. Ile konstruktorów musisz napisać?
+### Проблема: телескопічний конструктор
+
+Клас має 8 полів, з яких 5 необов'язкові. Скільки конструкторів доведеться написати?
+
 \`\`\`java
-// ❌ ANTYPATTERN: Teleskopowy Konstruktor
+// ❌ АНТИПАТЕРН
 public class HttpRequest {
     public HttpRequest(String url) { this(url, "GET", null, null, 30, false, null, null); }
     public HttpRequest(String url, String method) { this(url, method, null, null, 30, false, null, null); }
     public HttpRequest(String url, String method, String body) { this(url, method, body, null, 30, false, null, null); }
-    public HttpRequest(String url, String method, String body, Map<String, String> headers) { /* ... */ }
-    // ... i tak dalej, eksplozja kombinacji!
-    
+    // ... комбінаторний вибух!
     public HttpRequest(String url, String method, String body, Map<String, String> headers,
-                       int timeoutSeconds, boolean followRedirects, String proxyHost, Integer proxyPort) {
-        // ...
-    }
+                       int timeoutSeconds, boolean followRedirects, String proxyHost, Integer proxyPort) { }
 }
-\`\`\`
-Który parametr jest który? Co oznacza \`30\` i \`false\`? To **nieczytelne, kruche i niebezpieczne**.
 
-### Rozwiązanie: Builder
+new HttpRequest("https://x", "POST", null, null, 30, false, null, null);   // що тут означають 30 і false?
+\`\`\`
+
+### Рішення: Builder
+
 \`\`\`java
-// ✅ BUILDER — każdy parametr ma swoją nazwę
 HttpRequest request = HttpRequest.builder()
-    .url("https://api.example.com/users")
-    .method("POST")
-    .body("{\\"name\\": \\"Jan\\"}")
-    .header("Content-Type", "application/json")
-    .header("Authorization", "Bearer token123")
-    .timeoutSeconds(10)
-    .followRedirects(true)
-    .build();
+        .url("https://api.example.com/users")
+        .method("POST")
+        .body("{\\"name\\": \\"Ян\\"}")
+        .header("Content-Type", "application/json")
+        .header("Authorization", "Bearer token123")
+        .timeoutSeconds(10)
+        .followRedirects(true)
+        .build();
 \`\`\`
-Kod jest **samodokumentujący się**. Każdy parametr ma nazwę. Kolejność nie ma znaczenia.
 
-### Jak zaimplementować Builder ręcznie (bez Lomboka):
+Код **самодокументований**: кожен параметр має назву, порядок не важливий.
+
+### Ручна реалізація (без Lombok)
+
 \`\`\`java
-public class HttpRequest {
+public final class HttpRequest {
     private final String url;
     private final String method;
     private final String body;
     private final Map<String, String> headers;
     private final int timeoutSeconds;
 
-    // Prywatny konstruktor — NIKT nie może stworzyć obiektu bez Buildera!
-    private HttpRequest(Builder builder) {
-        this.url = Objects.requireNonNull(builder.url, "URL jest wymagany!");
-        this.method = builder.method;
-        this.body = builder.body;
-        this.headers = Map.copyOf(builder.headers); // Defensywna kopia (immutability!)
-        this.timeoutSeconds = builder.timeoutSeconds;
+    private HttpRequest(Builder b) {                      // приватний: лише через Builder
+        this.url = Objects.requireNonNull(b.url, "url обов'язковий");
+        this.method = b.method;
+        this.body = b.body;
+        this.headers = Map.copyOf(b.headers);             // захисна копія: незмінність
+        this.timeoutSeconds = b.timeoutSeconds;
     }
 
     public static Builder builder() { return new Builder(); }
 
-    public static class Builder {
+    public static final class Builder {
         private String url;
-        private String method = "GET";          // Wartość domyślna
+        private String method = "GET";                    // значення за замовчуванням
         private String body;
         private final Map<String, String> headers = new LinkedHashMap<>();
-        private int timeoutSeconds = 30;        // Wartość domyślna
+        private int timeoutSeconds = 30;
 
         public Builder url(String url) { this.url = url; return this; }
-        public Builder method(String method) { this.method = method; return this; }
-        public Builder body(String body) { this.body = body; return this; }
-        public Builder header(String key, String value) { 
-            this.headers.put(key, value); 
-            return this;   // <- Zwraca 'this', co pozwala na łańcuchowe wywoływanie (chaining)
-        }
-        public Builder timeoutSeconds(int seconds) { this.timeoutSeconds = seconds; return this; }
-        
+        public Builder method(String m) { this.method = m; return this; }
+        public Builder body(String b) { this.body = b; return this; }
+        public Builder header(String k, String v) { headers.put(k, v); return this; }   // return this -> chaining
+        public Builder timeoutSeconds(int s) { this.timeoutSeconds = s; return this; }
+
         public HttpRequest build() {
+            if (timeoutSeconds <= 0) throw new IllegalStateException("timeout > 0");    // валідація в одному місці
             return new HttpRequest(this);
         }
     }
@@ -98,429 +97,390 @@ public class HttpRequest {
 \`\`\`
 
 > [!TIP]
-> W Springu wzorzec Builder jest wszechobecny: \`ResponseEntity.ok().body(data).build()\`, \`WebClient.builder().baseUrl(...).build()\`, \`MockMvc.standaloneSetup(...).build()\`. Poznając ten wzorzec teraz, będziesz w domu, gdy przejdziesz na Spring Boot.
+> Builder трапляється всюди: \`HttpRequest.newBuilder()\` у JDK, \`ResponseEntity.ok().body(x)\` і \`WebClient.builder()\` у Spring, \`MockMvcBuilders\` у тестах.
+
+> [!NOTE]
+> Коли НЕ треба: 2–3 обов'язкові параметри. Тут досить конструктора або record. Builder має сенс за великої кількості необов'язкових параметрів або складної валідації.
 `
     },
     {
-      title: "3. Factory Method — Ukrywanie logiki tworzenia",
+      title: "3. Factory: приховуємо логіку створення",
       content: `
-### Problem:
-Klient (klasa wywołująca) musi wiedzieć, którą **konkretną klasę** utworzyć, co łamie zasadę Open/Closed (OCP). Dodanie nowego typu wymaga zmiany w każdym miejscu, gdzie jest \`new\`.
+### Проблема
+
+Клієнт мусить знати, **який конкретний клас** створити. Новий тип вимагає змін у кожному місці, де стоїть \`new\`, а це порушення OCP.
 
 \`\`\`java
-// ❌ ANTYPATTERN: Klient wie za dużo
+// ❌ клієнт знає забагато
 public class NotificationService {
     public void send(String channel, String message) {
-        if (channel.equals("email")) {
-            new EmailSender().send(message);     // Twarda zależność od klasy!
-        } else if (channel.equals("sms")) {
-            new SmsSender().send(message);        // Twarda zależność od klasy!
-        } else if (channel.equals("push")) {
-            new PushSender().send(message);       // Twarda zależność od klasy!
-        }
-        // Dodanie nowego kanału = zmiana TEGO kodu (naruszenie OCP!)
+        if (channel.equals("email")) new EmailSender().send(message);
+        else if (channel.equals("sms")) new SmsSender().send(message);
+        else if (channel.equals("push")) new PushSender().send(message);
+        // новий канал = зміна ЦЬОГО коду
     }
 }
 \`\`\`
 
-### Rozwiązanie: Factory Method
-\`\`\`java
-// Wspólny kontrakt
-public interface NotificationSender {
-    void send(String message);
-}
+### Рішення
 
-// Implementacje
+\`\`\`java
+public interface NotificationSender { void send(String message); }
+
 public class EmailSender implements NotificationSender {
-    public void send(String message) { System.out.println("📧 Email: " + message); }
+    public void send(String m) { System.out.println("📧 Email: " + m); }
 }
 public class SmsSender implements NotificationSender {
-    public void send(String message) { System.out.println("📱 SMS: " + message); }
+    public void send(String m) { System.out.println("📱 SMS: " + m); }
 }
 
-// Fabryka — jedyne miejsce, które wie o konkretnych klasach
-public class NotificationFactory {
+// фабрика — єдине місце, яке знає про конкретні класи
+public final class NotificationFactory {
+    private static final Map<String, Supplier<NotificationSender>> REGISTRY = Map.of(
+            "email", EmailSender::new,
+            "sms",   SmsSender::new,
+            "push",  PushSender::new);
+
     public static NotificationSender create(String channel) {
-        return switch (channel.toLowerCase()) {
-            case "email" -> new EmailSender();
-            case "sms"   -> new SmsSender();
-            case "push"  -> new PushNotificationSender();
-            default -> throw new IllegalArgumentException("Nieznany kanał: " + channel);
-        };
+        var supplier = REGISTRY.get(channel.toLowerCase());
+        if (supplier == null) throw new IllegalArgumentException("Невідомий канал: " + channel);
+        return supplier.get();
     }
 }
 
-// Klient — NIE WIE, jaką klasę dostaje. Zna tylko interfejs.
 public class NotificationService {
     public void send(String channel, String message) {
-        NotificationSender sender = NotificationFactory.create(channel);
-        sender.send(message);
+        NotificationFactory.create(channel).send(message);   // знає лише інтерфейс
     }
 }
 \`\`\`
 
-Teraz dodanie nowego kanału (\`"telegram"\`) wymaga:
-1. Nowej klasy \`TelegramSender implements NotificationSender\`.
-2. Nowego \`case\` w fabryce.
-**Zero zmian w \`NotificationService\`!** To jest istota zasady Open/Closed.
+Новий канал (\`"telegram"\`) — це новий клас і один рядок у реєстрі. У \`NotificationService\` нічого не змінюється. Мапа постачальників замість switch робить фабрику ще ближчою до OCP, а на її основі легко зробити реєстрацію плагінів (лабораторна 07).
 `
     },
     {
-      title: "4. Observer — System zdarzeń (Event-Driven Architecture)",
+      title: "4. Observer: подієва архітектура",
       content: `
-### Problem: 
-Kiedy użytkownik rejestruje się w systemie, musisz:
-1. Wysłać email powitalny.
-2. Utworzyć domyślny portfel.
-3. Zapisać zdarzenie do logów.
-4. Przyznać bonus za rejestrację.
+### Проблема
 
-Jeśli wpiszesz to wszystko w jedną metodę \`register()\`, klasa będzie miała 4 powody do zmiany (łamie SRP). A co jeśli jutro szef powie: "Dodaj jeszcze powiadomienie push"? Musisz edytować \`register()\`.
+Після реєстрації користувача треба: надіслати вітальний лист, створити гаманець, записати подію в журнал аудиту, нарахувати бонус. Якщо записати все це в \`register()\`, метод матиме чотири причини для змін (порушення SRP). А завтра додадуть ще push-сповіщення.
 
-### Rozwiązanie: Observer (Pub/Sub)
-Metoda \`register()\` nie wie, kto i co robi po rejestracji. Ona tylko **ogłasza** zdarzenie: *"Hej, ktoś się zarejestrował!"*. A zainteresowani (subskrybenci) reagują.
+### Рішення: Observer (Pub/Sub)
+
+\`register()\` лише **оголошує** подію; хто на неї реагує, він не знає.
 
 \`\`\`java
-// 1. Zdarzenie (Event) — proste DTO
-public record UserRegisteredEvent(String email, LocalDateTime timestamp) {}
+public record UserRegisteredEvent(String email, Instant at) { }
 
-// 2. Interfejs subskrybenta
 @FunctionalInterface
-public interface EventListener<T> {
-    void onEvent(T event);
-}
+public interface Listener<T> { void onEvent(T event); }
 
-// 3. Magistrala zdarzeń (Event Bus)
 public class EventBus {
-    // Mapa: typ zdarzenia -> lista subskrybentów
-    private final Map<Class<?>, List<EventListener<?>>> listeners = new ConcurrentHashMap<>();
+    private final Map<Class<?>, List<Listener<?>>> listeners = new ConcurrentHashMap<>();
 
-    public <T> void subscribe(Class<T> eventType, EventListener<T> listener) {
-        listeners.computeIfAbsent(eventType, k -> new CopyOnWriteArrayList<>()).add(listener);
+    public <T> void subscribe(Class<T> type, Listener<? super T> listener) {
+        listeners.computeIfAbsent(type, k -> new CopyOnWriteArrayList<>()).add(listener);
     }
 
     @SuppressWarnings("unchecked")
     public <T> void publish(T event) {
-        List<EventListener<?>> subs = listeners.getOrDefault(event.getClass(), List.of());
-        for (EventListener<?> listener : subs) {
-            ((EventListener<T>) listener).onEvent(event);
+        for (Listener<?> l : listeners.getOrDefault(event.getClass(), List.of())) {
+            try {
+                ((Listener<T>) l).onEvent(event);
+            } catch (RuntimeException e) {               // один зламаний слухач не валить решту
+                System.err.println("Слухач упав: " + e);
+            }
         }
     }
 }
 
-// 4. Serwis rejestracji — prosty i czysty!
 public class RegistrationService {
-    private final EventBus eventBus;
-
-    public RegistrationService(EventBus eventBus) { this.eventBus = eventBus; }
+    private final EventBus bus;
+    public RegistrationService(EventBus bus) { this.bus = bus; }
 
     public void register(String email, String password) {
-        // ... logika rejestracji (zapis do bazy) ...
-        
-        // Publikujemy zdarzenie. NIE WIEMY, kto na nie zareaguje!
-        eventBus.publish(new UserRegisteredEvent(email, LocalDateTime.now()));
+        // ... збереження в базі ...
+        bus.publish(new UserRegisteredEvent(email, Instant.now()));
     }
 }
 \`\`\`
 
-### Podpinanie subskrybentów:
 \`\`\`java
 EventBus bus = new EventBus();
+bus.subscribe(UserRegisteredEvent.class, e -> System.out.println("📧 Лист для " + e.email()));
+bus.subscribe(UserRegisteredEvent.class, e -> System.out.println("🎁 Бонус для " + e.email()));
+bus.subscribe(UserRegisteredEvent.class, e -> System.out.println("📝 Аудит: " + e.email() + " о " + e.at()));
 
-// Subskrybent 1: Wysyłka emaila
-bus.subscribe(UserRegisteredEvent.class, event ->
-    System.out.println("📧 Wysyłam powitalny email do: " + event.email())
-);
-
-// Subskrybent 2: Bonus
-bus.subscribe(UserRegisteredEvent.class, event ->
-    System.out.println("🎁 Przyznano bonus za rejestrację: " + event.email())
-);
-
-// Subskrybent 3: Log
-bus.subscribe(UserRegisteredEvent.class, event ->
-    System.out.println("📝 Log: nowy użytkownik " + event.email() + " o " + event.timestamp())
-);
-
-RegistrationService service = new RegistrationService(bus);
-service.register("jan@example.com", "secret123");
-// Wydrukuje wszystkie trzy wiadomości!
+new RegistrationService(bus).register("jan@example.com", "secret");
 \`\`\`
 
-Teraz dodanie powiadomienia push = jedna nowa linia \`bus.subscribe(...)\`. **Zero zmian w \`RegistrationService\`!**
+Push-сповіщення — це ще один \`bus.subscribe(...)\`. У \`RegistrationService\` **нуль змін**.
 
 > [!IMPORTANT]
-> To jest dokładnie ten sam mechanizm, który używa **Spring Boot** pod nazwą \`@EventListener\`. Ucząc się tego ręcznie, rozumiesz, co Spring robi pod maską.
+> Так само працює \`@EventListener\` у Spring. Якщо реалізувати це вручну, стає зрозуміло, що фреймворк робить «під капотом».
+
+> [!WARNING]
+> Ціна: потік керування стає неявним. З коду \`register()\` уже не видно, що станеться далі. Не робіть через події те, що мусить виконатися транзакційно разом з основною операцією.
 `
     },
     {
-      title: "5. Strategy — Wymienialny algorytm w runtime",
+      title: "5. Strategy: змінний алгоритм",
       content: `
-### Problem:
-System e-commerce musi naliczać podatek. Ale stawka zależy od kraju: Polska 23%, Niemcy 19%, USA — zależy od stanu. Jeśli wpiszesz to w jeden wielki \`if/else\`, kod stanie się nieczytelny.
+### Проблема
 
-### Rozwiązanie: Strategy
+Інтернет-магазин рахує податок, і ставка залежить від країни: Польща 23%, Німеччина 19%, у США — від штату. Величезний \`if/else\` швидко стає нечитабельним.
+
 \`\`\`java
-// Interfejs strategii
 @FunctionalInterface
 public interface TaxStrategy {
-    double calculateTax(double amount);
+    BigDecimal taxFor(BigDecimal amount);
+
+    static TaxStrategy flat(String rate) {
+        BigDecimal r = new BigDecimal(rate);
+        return amount -> amount.multiply(r).setScale(2, RoundingMode.HALF_UP);
+    }
 }
 
-// Konkretne strategie
-public class PolishTax implements TaxStrategy {
-    public double calculateTax(double amount) { return amount * 0.23; }
-}
-public class GermanTax implements TaxStrategy {
-    public double calculateTax(double amount) { return amount * 0.19; }
-}
-
-// Serwis — NIE WIE, jaki podatek nalicza. Deleguje do strategii.
 public class OrderService {
-    private final TaxStrategy taxStrategy;
+    private final TaxStrategy tax;
+    public OrderService(TaxStrategy tax) { this.tax = tax; }
 
-    public OrderService(TaxStrategy taxStrategy) {
-        this.taxStrategy = taxStrategy;
-    }
-
-    public double calculateTotal(double price) {
-        double tax = taxStrategy.calculateTax(price);
-        System.out.printf("Cena: %.2f, Podatek: %.2f, Razem: %.2f%n", price, tax, price + tax);
-        return price + tax;
+    public BigDecimal total(BigDecimal price) {
+        BigDecimal t = tax.taxFor(price);
+        System.out.printf("Ціна: %s, податок: %s, разом: %s%n", price, t, price.add(t));
+        return price.add(t);
     }
 }
-\`\`\`
 
-\`\`\`java
-// Użycie — strategia wybierana w runtime!
-OrderService polishShop = new OrderService(new PolishTax());
-polishShop.calculateTotal(100.0); // Cena: 100.00, Podatek: 23.00, Razem: 123.00
-
-OrderService germanShop = new OrderService(new GermanTax());
-germanShop.calculateTotal(100.0); // Cena: 100.00, Podatek: 19.00, Razem: 119.00
-
-// Dzięki @FunctionalInterface można nawet użyć lambdy:
-OrderService customShop = new OrderService(amount -> amount * 0.07);
-customShop.calculateTotal(100.0); // Cena: 100.00, Podatek: 7.00, Razem: 107.00
+new OrderService(TaxStrategy.flat("0.23")).total(new BigDecimal("100"));   // податок 23.00
+new OrderService(TaxStrategy.flat("0.19")).total(new BigDecimal("100"));   // податок 19.00
+new OrderService(a -> BigDecimal.ZERO).total(new BigDecimal("100"));       // лямбда!
 \`\`\`
 
 > [!TIP]
-> Wzorzec Strategy + Factory to potężna kombinacja. Fabryka wybiera strategię na podstawie danych (np. kraju z zamówienia), a Strategy wykonuje algorytm. W Springu można to zrealizować wstrzykując \`Map<String, TaxStrategy>\`, gdzie kluczem jest nazwa kraju.
+> Strategy + Factory — потужна комбінація: фабрика обирає стратегію за даними (країна замовлення), а стратегія виконує алгоритм. У Spring для цього можна впровадити \`Map<String, TaxStrategy>\` (ключ — назва bean-а).
 `
     },
     {
-      title: "6. Decorator — Dodawanie funkcji bez zmiany klasy",
+      title: "6. Decorator: нова поведінка без зміни класу",
       content: `
-### Problem:
-Masz interfejs \`DataSource\`, który czyta dane. Chcesz dodać:
-1. Kompresję (gzip).
-2. Szyfrowanie (AES).
-3. Logowanie (ile bajtów przeczytano).
-Ale NIE chcesz modyfikować oryginalnej klasy \`FileDataSource\`.
+### Проблема
 
-### Rozwiązanie: Decorator (Wrapper)
+Інтерфейс \`DataSource\` читає й пише дані. Треба додати стиснення, шифрування і логування, **не змінюючи** \`FileDataSource\`, причому в будь-якій комбінації.
+
 \`\`\`java
 public interface DataSource {
     String readData();
     void writeData(String data);
 }
 
-// Bazowa implementacja
 public class FileDataSource implements DataSource {
     private final String filename;
     public FileDataSource(String filename) { this.filename = filename; }
-
-    public String readData() { return "surowe dane z " + filename; }
-    public void writeData(String data) { System.out.println("Zapis do " + filename + ": " + data); }
+    public String readData() { return "сирі дані з " + filename; }
+    public void writeData(String data) { System.out.println("Запис у " + filename + ": " + data); }
 }
 
-// Bazowa klasa dekoratora
 public abstract class DataSourceDecorator implements DataSource {
-    protected final DataSource wrappee;    // <- Obiekt, który "owijamy"
-    
+    protected final DataSource wrappee;
     protected DataSourceDecorator(DataSource wrappee) { this.wrappee = wrappee; }
-    
     public String readData() { return wrappee.readData(); }
     public void writeData(String data) { wrappee.writeData(data); }
 }
 
-// Dekorator 1: Szyfrowanie
 public class EncryptionDecorator extends DataSourceDecorator {
-    public EncryptionDecorator(DataSource source) { super(source); }
-
-    public void writeData(String data) {
-        String encrypted = Base64.getEncoder().encodeToString(data.getBytes());
-        super.writeData(encrypted);  // Szyfrujemy PRZED przekazaniem dalej
+    public EncryptionDecorator(DataSource s) { super(s); }
+    @Override public void writeData(String data) {
+        super.writeData(Base64.getEncoder().encodeToString(data.getBytes(StandardCharsets.UTF_8)));
     }
-
-    public String readData() {
-        String data = super.readData();
-        return new String(Base64.getDecoder().decode(data));  // Deszyfrujemy PO odczycie
+    @Override public String readData() {
+        return new String(Base64.getDecoder().decode(super.readData()), StandardCharsets.UTF_8);
     }
 }
 
-// Dekorator 2: Logowanie
 public class LoggingDecorator extends DataSourceDecorator {
-    public LoggingDecorator(DataSource source) { super(source); }
-
-    public void writeData(String data) {
-        System.out.println("LOG: Zapis " + data.length() + " bajtów...");
+    public LoggingDecorator(DataSource s) { super(s); }
+    @Override public void writeData(String data) {
+        System.out.println("LOG: запис " + data.length() + " символів");
         super.writeData(data);
     }
 }
 \`\`\`
 
-### Magia: Łańcuchowe owijanie (Nesting)
 \`\`\`java
-DataSource source = new FileDataSource("dane.txt");
-source = new EncryptionDecorator(source);   // Warstwa 1: szyfrowanie
-source = new LoggingDecorator(source);      // Warstwa 2: logowanie
+DataSource source = new FileDataSource("data.txt");
+source = new EncryptionDecorator(source);   // шар 1
+source = new LoggingDecorator(source);      // шар 2
 
-source.writeData("Tajne dane!");
-// LOG: Zapis 12 bajtów...
-// Zapis do dane.txt: VGFqbmUgZGFuZSE=  (zaszyfrowane Base64!)
+source.writeData("Таємні дані!");
+// LOG: запис 12 символів
+// Запис у data.txt: 0KLQsNGU0LzQvdGWINC00LDQvdGWIQ==
 \`\`\`
 
-To **dokładnie** ten sam mechanizm, który znasz z \`new BufferedReader(new InputStreamReader(new FileInputStream("plik.txt")))\`! Każda warstwa dodaje nowe zachowanie (buforowanie, dekodowanie), nie zmieniając oryginalnej klasy.
+Це **той самий** механізм, що й \`new BufferedReader(new InputStreamReader(new FileInputStream("f.txt")))\`.
+
+> [!NOTE]
+> Порядок шарів важливий: «спочатку стиснути, потім зашифрувати» працює, а навпаки — ні (зашифровані дані майже не стискаються).
 `
     },
     {
-      title: "7. Antywzorce — Czego NIE robić",
+      title: "7. Антипатерни: чого НЕ робити",
       content: `
-### Antywzorzec 1: Singleton z globalnym mutowalnym stanem
+### Антипатерн 1: Singleton зі змінюваним глобальним станом
+
 \`\`\`java
-// ❌ ZŁO: Globalny stan + Singleton = koszmar w testach i wielowątkowości
+// ❌
 public class AppConfig {
     private static final AppConfig INSTANCE = new AppConfig();
-    private String databaseUrl = "jdbc:h2:mem:test";  // Mutowalny stan!
-
+    private String databaseUrl = "jdbc:h2:mem:test";
     public static AppConfig getInstance() { return INSTANCE; }
-    public String getDatabaseUrl() { return databaseUrl; }
-    public void setDatabaseUrl(String url) { this.databaseUrl = url; } // NIEBEZPIECZNE!
+    public void setDatabaseUrl(String url) { this.databaseUrl = url; }   // НЕБЕЗПЕЧНО
 }
 \`\`\`
-**Problem:** Każdy test, który wywołuje \`setDatabaseUrl()\`, zmienia stan dla WSZYSTKICH testów. Testy stają się zależne od kolejności uruchamiania (flaky tests).
 
-**Rozwiązanie:** Używaj Singletona TYLKO dla obiektów **bezstanowych** (Stateless) lub **niemutowalnych** (Immutable). W Springu beany \`@Service\` są singletonami, ale są bezstanowe — nie mają pól, które zmieniają się w runtime.
+Тест, який викликав \`setDatabaseUrl()\`, змінює стан для **всіх** наступних тестів. Результат залежить від порядку запуску (flaky tests), а в багатопотоковому коді з'являються гонки даних.
 
-### Antywzorzec 2: Over-engineering (Wzorzec dla jednego przypadku)
+**Рішення:** singleton лише для **безстанових** або **незмінних** об'єктів. Сервіси (\`@Service\`) у Spring — singleton-и, але без змінюваних полів.
+
+### Антипатерн 2: Over-engineering
+
 \`\`\`java
-// ❌ ZŁO: Fabryka, strategia i obserwator... dla jednego typu powiadomienia
+// ❌ фабрика, стратегія, спостерігач і фасад... для одного типу сповіщення
 public interface NotificationStrategy { void send(String msg); }
-public class EmailNotificationStrategy implements NotificationStrategy { /* ... */ }
-public class NotificationStrategyFactory { /* ... */ }
-public class NotificationObserver { /* ... */ }
-public class NotificationFacade { /* ... */ }
-// ... 6 klas, żeby wysłać jednego emaila!
+public class EmailNotificationStrategy implements NotificationStrategy { }
+public class NotificationStrategyFactory { }
+public class NotificationObserver { }
+public class NotificationFacade { }
+// 6 класів, щоб надіслати один лист
 
-// ✅ DOBRZE: Proste rozwiązanie, jeśli jest tylko jeden kanał
+// ✅ поки канал один
 public class EmailService {
-    public void send(String to, String message) {
-        // Bezpośrednia implementacja. Prosto, czytelnie, działa.
-    }
+    public void send(String to, String message) { /* просто і зрозуміло */ }
 }
 \`\`\`
 
 > [!CAUTION]
-> **Złota Zasada:** Nie twórz abstrakcji "na zapas". Wprowadzaj wzorzec dopiero wtedy, gdy pojawia się **drugi** przypadek użycia. Pierwszy raz — pisz prosto. Drugi raz — refaktoryzuj do wzorca. Nazywa się to "Rule of Three" (Reguła Trzech).
+> **Rule of Three:** перший раз пишіть просто. Удруге помітьте повтор. Утретє виносьте спільне в абстракцію. Абстракція «на майбутнє», яке так і не настане, — це зайвий код, який треба читати, тестувати й підтримувати.
 
-### Antywzorzec 3: God Object (Boski Obiekt)
+### Антипатерн 3: God Object
+
 \`\`\`java
-// ❌ ZŁO: Klasa, która robi WSZYSTKO
+// ❌ клас, який робить УСЕ
 public class ApplicationManager {
-    public void registerUser() { /* ... */ }
-    public void processPayment() { /* ... */ }
-    public void sendNotification() { /* ... */ }
-    public void generateReport() { /* ... */ }
-    public void updateInventory() { /* ... */ }
-    // ... 3000 linii kodu, 47 metod, 0 szansy na utrzymanie
+    public void registerUser() { }
+    public void processPayment() { }
+    public void sendNotification() { }
+    public void generateReport() { }
+    public void updateInventory() { }
+    // ... 3000 рядків, 47 методів
 }
 \`\`\`
-To łamie SRP. Rozwiązanie: rozbij na \`UserService\`, \`PaymentService\`, \`NotificationService\`, \`ReportService\`, \`InventoryService\`.
+
+Порушує SRP. Розбийте на \`UserService\`, \`PaymentService\`, \`NotificationService\`, \`ReportService\`, \`InventoryService\`.
+
+### Антипатерн 4: Anemic Domain + «Manager/Helper/Util»
+
+Класи з назвами \`*Manager\`, \`*Helper\`, \`*Utils\`, які обробляють чужі дані, часто означають, що логіку відірвано від даних. Якщо \`OrderUtils.calculateTotal(order)\` знає все про поля \`Order\`, цьому методу місце в самому \`Order\`.
 `
     },
     {
-      title: "8. Kompozycja wzorców — Jak łączyć je w prawdziwym systemie",
+      title: "8. Поєднання патернів у реальній системі",
       content: `
-W prawdziwych systemach wzorce **nigdy** nie występują samodzielnie. Oto jak typowy serwis e-commerce łączy 4 wzorce:
+У реальних системах патерни **майже ніколи** не трапляються поодинці. Ось як типовий сервіс замовлень поєднує чотири:
 
-\`\`\`
-┌──────────────────────────────────────────────────┐
-│                   OrderService                    │
-│  (otrzymuje TaxStrategy przez DI — Strategy)     │
-├──────────────────────────────────────────────────┤
-│                                                    │
-│  1. Order order = Order.builder()                 │
-│         .product("Laptop")                        │
-│         .quantity(1)                               │
-│         .build();                   ← BUILDER     │
-│                                                    │
-│  2. TaxStrategy tax =                             │
-│       TaxFactory.create(country);   ← FACTORY     │
-│                                                    │
-│  3. double total =                                │
-│       tax.calculateTax(price);      ← STRATEGY    │
-│                                                    │
-│  4. eventBus.publish(                             │
-│       new OrderPlacedEvent(order)); ← OBSERVER    │
-│                                                    │
-└──────────────────────────────────────────────────┘
+\`\`\`text
+┌──────────────────────────────────────────────────────┐
+│                     OrderService                     │
+│   (отримує TaxFactory та EventBus через конструктор) │
+├──────────────────────────────────────────────────────┤
+│ 1. Order order = Order.builder()                     │
+│        .product("Laptop").quantity(1)                │
+│        .build();                        ← BUILDER    │
+│                                                      │
+│ 2. TaxStrategy tax = taxFactory.forCountry(country); │
+│                                         ← FACTORY    │
+│ 3. BigDecimal total = tax.taxFor(price) ← STRATEGY   │
+│                                                      │
+│ 4. bus.publish(new OrderPlaced(order)); ← OBSERVER   │
+└──────────────────────────────────────────────────────┘
 \`\`\`
 
-* **Builder** tworzy złożony obiekt \`Order\`.
-* **Factory** wybiera strategię podatkową na podstawie kraju.
-* **Strategy** oblicza podatek bez wiedzy OrderService o stawkach.
-* **Observer** powiadamia subskrybentów (magazyn, email, analitykę) bez twardych zależności.
+* **Builder** створює складний об'єкт \`Order\` з валідацією.
+* **Factory** обирає стратегію податку за країною.
+* **Strategy** рахує податок; \`OrderService\` про ставки нічого не знає.
+* **Observer** сповіщає склад, пошту й аналітику без жорстких залежностей.
+
+### Що з цього є в Spring Boot
+
+| Механізм Spring | Патерн |
+| --- | --- |
+| bean-и (scope singleton) | Singleton |
+| \`@Transactional\`, \`@Cacheable\`, \`@Async\` | Proxy |
+| \`@EventListener\` | Observer |
+| впровадження інтерфейсів | Strategy + DI |
+| \`JdbcTemplate\`, \`RestTemplate\` | Template Method |
+| \`FactoryBean\`, \`@Bean\`-методи | Factory |
 
 > [!TIP]
-> W **Laboratorium 11** zaimplementujesz dokładnie taki system. Zobaczysz, jak te cztery wzorce współpracują w jednym programie.
+> У **лабораторній 11** ви реалізуєте саме таку систему й побачите, як ці патерни працюють разом в одній програмі.
 `
     }
   ],
   quiz: [
     {
-      question: "Masz klasę z 12 opcjonalnymi parametrami w konstruktorze. Który wzorzec projektowy jest najlepszym rozwiązaniem?",
+      question: "Конструктор класу має 12 необов'язкових параметрів. Який патерн підходить найкраще?",
       options: [
-        "Singleton — aby nie tworzyć wielu instancji z różnymi parametrami",
-        "Factory Method — aby ukryć logikę tworzenia za metodą statyczną",
-        "Builder — pozwala na czytelne ustawianie tylko tych parametrów, które są potrzebne, z domyślnymi wartościami dla reszty",
-        "Observer — aby powiadomić system o nowo utworzonym obiekcie"
+        "Singleton",
+        "Factory Method",
+        "Builder: задаються лише потрібні параметри з назвами, решта бере значення за замовчуванням",
+        "Observer"
       ],
       answer: 2,
-      explanation: "Builder rozwiązuje problem 'Telescoping Constructor'. Zamiast wielu konstruktorów z różnymi kombinacjami parametrów, Builder pozwala na łańcuchowe wywoływanie .metoda(wartość) z jasnymi nazwami i domyślnymi wartościami."
+      explanation: "Builder розв'язує проблему телескопічного конструктора: замість купи перевантажень — ланцюжок викликів з назвами параметрів."
     },
     {
-      question: "Czym jest antywzorzec 'Over-engineering' i jak go unikać?",
+      question: "Що таке over-engineering і як його уникнути?",
       options: [
-        "Stosowaniem zbyt prostych rozwiązań, które nie skalują się. Unikamy go, dodając więcej abstrakcji.",
-        "Tworzeniem zbyt wielu abstrakcji i wzorców 'na zapas', bez realnej potrzeby. Unikamy go stosując 'Rule of Three' — wprowadzamy wzorzec dopiero przy drugim lub trzecim przypadku użycia.",
-        "Brakiem testów jednostkowych. Unikamy go pisząc testy dla każdej metody.",
-        "Używaniem zbyt nowych wersji Javy. Unikamy go, pozostając na Java 11 LTS."
+        "Надто прості рішення; уникати, додаючи абстракції",
+        "Абстракції і патерни «на запас» без реальної потреби; уникати за правилом трьох: абстрагувати, коли з'явилася реальна повторюваність",
+        "Відсутність тестів",
+        "Використання нових версій Java"
       ],
       answer: 1,
-      explanation: "Over-engineering to tworzenie 'kosmicznej architektury' dla prostego problemu. 6 klas + 3 interfejsy, żeby wysłać emaila, to marnowanie czasu zespołu. Proste rozwiązanie jest lepsze, dopóki nie pojawi się realna potrzeba abstrakcji."
+      explanation: "Шість класів і три інтерфейси, щоб надіслати один лист, лише марнують час команди. Просте рішення краще, доки немає реальної потреби в абстракції."
     },
     {
-      question: "Jaką kombinację wzorców najczęściej spotkasz w Spring Boot?",
+      question: "Яке поєднання патернів найчастіше трапляється в Spring Boot?",
       options: [
         "Builder + Template Method",
-        "Singleton (Beany) + Proxy (@Transactional) + Observer (@EventListener) + Strategy (interfejsy serwisów)",
-        "Tylko Factory Method, reszta jest ukryta przez Spring",
-        "Adapter + Decorator, ponieważ Spring jest zbudowany wyłącznie na strumieniach I/O"
+        "Singleton (bean-и) + Proxy (@Transactional) + Observer (@EventListener) + Strategy (впровадження інтерфейсів)",
+        "Лише Factory Method",
+        "Adapter + Decorator"
       ],
       answer: 1,
-      explanation: "Spring Boot łączy wiele wzorców: beany są Singletonami, @Transactional i @Cacheable działają przez Proxy (AOP), zdarzenia to Observer, a wstrzykiwanie interfejsów to Strategy + Dependency Injection. Rozumiejąc te wzorce, rozumiesz Springa."
+      explanation: "Хто розуміє ці патерни, той розуміє, як Spring працює «під капотом»."
     },
     {
-      question: "Dlaczego Singleton z mutowalnym stanem jest uważany za antywzorzec?",
+      question: "Чому singleton зі змінюваним станом — антипатерн?",
       options: [
-        "Ponieważ Singleton nie może mieć pól instancyjnych, tylko statyczne.",
-        "Ponieważ jest zbyt wolny — tworzenie jednej instancji blokuje wszystkie wątki.",
-        "Ponieważ globalny mutowalny stan powoduje, że testy stają się zależne od kolejności uruchamiania (flaky tests), a w środowisku wielowątkowym prowadzi do Race Conditions.",
-        "Ponieważ Garbage Collector nie może usunąć Singletona z pamięci, co powoduje Memory Leak."
+        "Singleton не може мати полів екземпляра",
+        "Він надто повільний",
+        "Глобальний змінюваний стан робить тести залежними від порядку запуску, а в багатопотоковому коді спричиняє гонки даних",
+        "GC не може його видалити"
       ],
       answer: 2,
-      explanation: "Jeśli Singleton trzyma stan, który może być zmieniony (np. setDatabaseUrl()), to jeden test może zmienić ten stan i 'zanieczyścić' kolejne testy. Bezpieczny Singleton jest bezstanowy lub niemutowalny."
+      explanation: "Безпечний singleton — безстановий або незмінний."
+    },
+    {
+      question: "Що є ціною використання Observer/EventBus?",
+      options: [
+        "Код стає повільнішим у 10 разів",
+        "Потік керування стає неявним: з коду, що публікує подію, не видно, хто і що на неї зробить",
+        "Не можна використовувати лямбди",
+        "Ціни немає"
+      ],
+      answer: 1,
+      explanation: "Слабке зв'язування ускладнює відстеження логіки. Тому не варто виносити в події те, що мусить виконатися разом з основною операцією."
     }
   ]
 };
